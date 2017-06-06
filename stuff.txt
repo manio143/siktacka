@@ -1,0 +1,10 @@
+struct msg_from_client {
+	uint64_t session_id;
+	char turn_direction;
+	uint64_t next_expected_event_no;
+	char[65] player_name;
+}
+
+session_id tworzone przez klienta w mikrosekundach
+
+
