@@ -7,6 +7,7 @@
 #ifndef M_NET
 #define M_NET
 
+#ifdef CLIENT
 void get_host_addrinfo(addrinfo_t** addr_out,
                        arguments_t* args,
                        addrinfo_t* addr_hints) {
@@ -37,6 +38,7 @@ void get_sockaddr(sockaddr_t* sockaddr, arguments_t* args) {
 
     freeaddrinfo(addr);
 }
+#endif
 
 void send_bytes(int sock, void* bytes, int length, sockaddr_t* sockaddr) {
     sendto(sock, bytes, length, 0, (struct sockaddr*)sockaddr,
@@ -52,15 +54,15 @@ int receive_bytes(int sock,
 }
 
 //TODO: to IPv6
-int init_socket(pollfd_t * out_pollfd, uint16_t port) {
+void init_socket(pollfd_t * out_pollfd, uint16_t port) {
     sockaddr_t server;
 
     int sock = socket(PF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
         err("Couldn't create socket\n");
 
-    out_pollfd.fd = sock;
-    out_pollfd.events = POLLIN;
+    out_pollfd->fd = sock;
+    out_pollfd->events = POLLIN;
 
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = htonl(INADDR_ANY);

@@ -9,14 +9,11 @@
 #ifndef M_TYPES
 #define M_TYPES
 
-typedef char* null_terminated_string_t;
-typedef int bool;
-
 typedef struct msg_from_client {
 	uint64_t session_id;
 	uint8_t turn_direction;
 	uint32_t next_expected_event_no;
-	char[65] player_name;
+	char player_name[65];
 } __attribute__((packed)) msg_from_client_t;
 
 typedef struct msg_event_header {
@@ -50,6 +47,7 @@ typedef struct msg_event {
         msg_event_data_player_eliminated_t player_eliminated;
         void * game_over;
     } event_data;
+    uint32_t crc32;    
 } __attribute__((packed)) msg_event_t;
 
 typedef struct msg_from_server {
@@ -61,7 +59,9 @@ typedef struct player_state {
     double x;
     double y;
     uint8_t direction;
-    char[65] player_name;
+    bool active;
+    int player_no;
+    char player_name[65];
     int client_index;
 } player_state_t;
 
@@ -83,7 +83,8 @@ typedef struct client {
     time_t time;
     uint64_t session_id;
 	uint8_t turn_direction;
-    char[65] player_name;
+    char player_name[65];
+    int player_index;
 } client_t;
 
 #endif
