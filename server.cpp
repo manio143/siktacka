@@ -62,6 +62,8 @@ int client_exists(client_t& client);
 bool add_client(client_t client);
 vector<client_t> clients;
 
+bool every_Nms(int n);
+
 int active_players = 0;
 
 void clean_clients(time_t time) {
@@ -172,7 +174,7 @@ int main(int argc, char** argv) {
                     events.push_back(add_pixel(player));
             }
         }
-        if (running) {
+        if (running && every_Nms(1 / args.rounds_per_second * 1000)) {
             // GAME_UPDATE
             for (size_t i = 0; i < players.size(); i++) {
                 auto turn_dir = clients[players[i].client_index].turn_direction;
@@ -186,17 +188,27 @@ int main(int argc, char** argv) {
                         players[i].direction += 360;
                 }
 
-                // TODO: floor_x, floor_y
-                // TODO: move x,y towards direction
-                // TODO: n_floor_x, n_floor_y
-                // if(floor_x == n_floor_x && floor_y == n_floor_y) continue;
-                // else repeat condition from line 130
+                int fx = floor(players[i].x), fy = floor(players[i].y);
+
+                double angle = players[i].direction/360 * 2 * M_PI;
+                players[i].x += cos(angle);
+                players[i].y += sin(angle);
+
+                int nfx = floor(players[i].x), nfy = floor(players[i].y);
+                if (fx == nfx && fy == nfy)
+                    continue;
+                else {
+                    if (get_pixel(players[i]))
+                        events.push_back(eliminate_player(players[i]));
+                    else
+                        events.push_back(add_pixel(players[i]));
+                }
             }
         }
-        // TODO: don't update until 1/ROUNDS_PER_SECONDS has passed
 
         if (active_players == 1) {
             running = false;
+            events.push_back(game_over_event());
         }
 
         if ((int)events.size() > last_event_sent + 1) {
@@ -318,10 +330,13 @@ msg_event_t make_new_game_event() {
     msg_event_data_new_game_t ng = {.maxx = maxx, .maxy = maxy};
     event.event_data.new_game = ng;
     int player_string_len = 0;
-    for (auto& player : players)
+    for (auto& player : players) {
         player_string_len += strlen(player.player_name) + 1;
-
-    event.event_data.new_game.player_names = new char[player_string_len];
+        if (player_string_len > MAX_PACKET_SIZE) {
+            player_string_len -= strlen(player.player_name) + 1;
+            break;
+        }
+    }
 
     int i = 0;
     for (int pos = 0; pos < player_string_len; i++) {
@@ -351,6 +366,7 @@ msg_event_t add_pixel(player_state_t& player) {
     event.event_data.pixel.player_number = player.player_no;
     event.event_data.pixel.x = floor(player.x);
     event.event_data.pixel.y = floor(player.y);
+    get_pixel(player) = player.player_no;
     return event;
 }
 
@@ -377,37 +393,49 @@ void prepare_event(msg_event_t& event) {
     }
     // CRC
     event.header.len += sizeof(uint32_t);
-    event.crc32 = crc32((char*)&event, event.header.len);
+    event.crc32 = htonl(crc32((char*)&event, event.header.len));
 
-    //TODO: hton
+    event.header = msg_event_header_hton(event.header);
+    switch (event.header.event_type) {
+        case NEW_GAME:
+            event.event_data.new_game.maxx = htonl(event.event_data.new_game.maxx);
+            event.event_data.new_game.maxy = htonl(event.event_data.new_game.maxy);
+            break;
+        case PIXEL:
+            event.event_data.pixel.x = htonl(event.event_data.pixel.x);
+            event.event_data.pixel.y = htonl(event.event_data.pixel.y);
+            break;
+    }
 }
 
 char send_buffer[MAX_PACKET_SIZE];
 
-int write_to_buffer(void * buffer, int idx) {
-    auto & event = events[idx];
-    *((msg_event_header_t *)buffer) = event.header;
+int write_to_buffer(char* buffer, int idx) {
+    auto& event = events[idx];
+    *((msg_event_header_t*)buffer) = event.header;
     buffer += sizeof(msg_event_header_t);
-    
+
     switch (event.header.event_type) {
         case NEW_GAME:
-            *((uint32_t *)buffer) = event.event_data.new_game.maxx;
+            *((uint32_t*)buffer) = event.event_data.new_game.maxx;
             buffer += sizeof(uint32_t);
-            *((uint32_t *)buffer) = event.event_data.new_game.maxy;
+            *((uint32_t*)buffer) = event.event_data.new_game.maxy;
             buffer += sizeof(uint32_t);
-            memcpy(buffer, event.event_data.new_game.player_names, event.event_data.new_game.player_names_size);
+            memcpy(buffer, event.event_data.new_game.player_names,
+                   event.event_data.new_game.player_names_size);
             buffer += event.event_data.new_game.player_names_size;
             break;
         case PIXEL:
-            *((msg_event_data_pixel_t *)buffer) = event.event_data.pixel;
+            *((msg_event_data_pixel_t*)buffer) = event.event_data.pixel;
             buffer += sizeof(msg_event_data_pixel_t);
             break;
         case PLAYER_ELIMINATED:
-            *((msg_event_data_player_eliminated_t *)buffer) = event.event_data.player_eliminated;
+            *((msg_event_data_player_eliminated_t*)buffer) =
+                event.event_data.player_eliminated;
             buffer += sizeof(msg_event_data_player_eliminated_t);
             break;
     }
-    *((uint32_t *)buffer) = event.crc32;
+    *((uint32_t*)buffer) = event.crc32;
     buffer += sizeof(uint32_t);
     return event.header.len;
 }
@@ -430,11 +458,27 @@ void send_events(int next_event_no, client_t& client) {
 
         memset(send_buffer, 0, MAX_PACKET_SIZE);
 
-        *((int *)send_buffer) = htonl(game_id);
-        void * buffer = send_buffer + sizeof(game_id);
-        for(int i = 0; i<events_to_send; i++)
-            buffer += write_to_buffer(buffer, next_event_no - events_to_send + i);
+        *((int*)send_buffer) = htonl(game_id);
+        char* buffer = send_buffer + sizeof(game_id);
+        for (int i = 0; i < events_to_send; i++)
+            buffer +=
+                write_to_buffer(buffer, next_event_no - events_to_send + i);
 
-        send_bytes(sock, send_buffer, MAX_PACKET_SIZE - space_left, &client.sockaddr);
+        send_bytes(sock, send_buffer, MAX_PACKET_SIZE - space_left,
+                   &client.sockaddr);
     }
+}
+
+bool every_Nms(int n) {
+    static struct timespec prev = {0, 0};
+    static struct timespec next = {0, 0};
+
+    if (clock_gettime(CLOCK_MONOTONIC, &next))
+        err("clock_gettime");
+    if (next.tv_sec > prev.tv_sec ||
+        next.tv_nsec - prev.tv_nsec > n * 1000000) {
+        prev = next;
+        return true;
+    }
+    return false;
 }

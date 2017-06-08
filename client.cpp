@@ -1,3 +1,5 @@
+#include <vector>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -8,138 +10,326 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <signal.h>
+#include <time.h>
 
-#define TRUE 1
-#define FALSE 0
-#define BUFFER_SIZE 4000
+#include <arpa/inet.h>
 
-#define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
-#define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+#include "const.h"
+#include "types.h"
+#include "crc32.h"
+#include "err.h"
+#include "hton.h"
 
-
-void err(const char* fmt, ...);
+#define CLIENT
 
 typedef struct arguments {
-    uint64_t timestamp;
-    char c;
+    char player_name[65];
     char* host;
     uint16_t port;
+    char* guihost;
+    uint16_t guiport;
 } arguments_t;
 
-struct send_packet {
-    uint64_t network_timestamp;
-    char c;
-} __attribute__((packed));
-typedef struct send_packet send_packet_t;
+#include "net.h"
 
-typedef struct addrinfo addrinfo_t;
-typedef struct sockaddr_in sockaddr_t;
+using namespace std;
 
+bool is_ipv6_address(const char* str);
 void fill_args(arguments_t* args_out, int argc, char** argv);
 
-void get_host_addrinfo(addrinfo_t** addr_out,
-                       arguments_t* args,
-                       addrinfo_t* addr_hints);
+void receive_from_server(int sock, sockaddr_t& incoming_sockaddr);
+void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args);
+void process_events(int sock);
+void receive_turn_direction(int sock);
 
-void get_sockaddr(sockaddr_t* sockaddr, arguments_t* args);
+bool every_20ms();
 
-void make_packet(send_packet_t* packet_out, arguments_t* args);
+char buffer[MAX_PACKET_SIZE];
 
-void send_bytes(int sock, void* bytes, int length, sockaddr_t* sockaddr);
+vector<msg_event_t> events;
+char* players;
 
-int receive_bytes(int sock,
-                  void* buffer,
-                  int max_length,
-                  sockaddr_t* sockaddr_out);
-
-static int finish = FALSE;
-
-/* Obsługa sygnału kończenia */
-static void catch_int(int sig) {
-    finish = TRUE;
-}
-
-char buffer[BUFFER_SIZE];
+uint8_t turn_direction = 0;
+int last_sent_to_gui = -1;
+uint64_t session_id;
+bool running = false;
+int current_game_id;
 
 int main(int argc, char** argv) {
-    int sock;
+    int server_sock, gui_sock;
     arguments_t args;
-    sockaddr_t sockaddr;
+    sockaddr_t host;
+    sockaddr_t gui_host;
     sockaddr_t incoming_sockaddr;
-    send_packet_t packet;
-
-    // if (signal(SIGINT, catch_int) == SIG_ERR) {
-    //     err("Unable to change signal handler\n");
-    // }
 
     fill_args(&args, argc, argv);
-    get_sockaddr(&sockaddr, &args);
+    get_sockaddr(&host, args.host, args.port, true);
+    get_sockaddr(&gui_host, args.guihost, args.guiport, false);
 
-    sock = socket(PF_INET, SOCK_DGRAM, 0);
-    if (sock < 0)
+    session_id = time(NULL);
+
+    server_sock = socket(PF_INET6, SOCK_DGRAM, 0);
+    gui_sock = socket(PF_INET6, SOCK_STREAM, 0);
+    if (server_sock < 0 || gui_sock < 0)
         err("Couldn't create socket\n");
 
-    make_packet(&packet, &args);
+    connect(gui_sock, (sockaddr*)&gui_host, sizeof(gui_host));
 
-    send_bytes(sock, &packet, sizeof(packet), &sockaddr);
-
-    while (1) {
-        if (finish == TRUE)
-            break;
-
-        memset(&buffer, 0, sizeof(buffer));
-        int received = receive_bytes(sock, &buffer, sizeof(buffer) - 1,
-                                     &incoming_sockaddr);
-        if (received < 0) {
-            err("Error reading data from socket\n");
-        }
-        send_packet_t * pack = (send_packet_t *)buffer;
-        printf("%u %c %s\n", ntohl(pack->network_timestamp), pack->c, buffer + sizeof(send_packet_t));
+    while (true) {
+        if (every_20ms())
+            send_request_to_server(server_sock, host, args);
+        receive_from_server(server_sock, incoming_sockaddr);
+        process_events(gui_sock);
+        receive_turn_direction(gui_sock);
     }
 
-    if (close(sock) == -1)
+    if (close(server_sock) == -1)
         err("close");
 
     return 0;
 }
 
+void break_string_on_delim(char* str, char delim, char** out_second_str) {
+    while (*str) {
+        if (*str == delim) {
+            *str = 0;
+            *out_second_str = str + 1;
+            break;
+        }
+        str++;
+    }
+}
+
+void substitute(char* str, size_t max_length, char from, char to) {
+    for (size_t i = 0; i < max_length; i++)
+        if (*(str + i) == from)
+            *(str + i) = to;
+}
+
 void fill_args(arguments_t* args_out, int argc, char** argv) {
-    if (argc < 4)
-        err("Too few arguments\n");
+    if (argc < 3 || argc > 4)
+        err("USAGE: %s player_name game_server_host[:port] "
+            "[ui_server_host[:port]]\n",
+            argv[0]);
 
-    args_out->timestamp = atol(argv[1]);
-    args_out->c = argv[2][0];
-    args_out->host = argv[3];
-    args_out->port = argc >= 5 ? atoi(argv[4]) : 20160;
+    strncpy(args_out->player_name, argv[1], 64);
+    for (size_t i = 0; i < sizeof(args_out->player_name); i++) {
+        if (args_out->player_name[i] == '\0')
+            break;
+        if (args_out->player_name[i] < 33 || args_out->player_name[i] > 126)
+            err("Invalid character in player_name.\n");
+    }
+    char* port = NULL;
+    if (!is_ipv6_address(argv[2]))
+        break_string_on_delim(argv[2], ':', &port);
+    args_out->host = argv[2];
+    args_out->port = port == NULL ? 12345 : atoi(port);
+    if (argc == 4) {
+        port = NULL;
+        if (!is_ipv6_address(argv[3]))
+            break_string_on_delim(argv[3], ':', &port);
+        args_out->guihost = argv[3];
+        args_out->guiport = port == NULL ? 12346 : atoi(port);
+    } else {
+        args_out->guihost = "localhost";
+        args_out->guiport = 12346;
+    }
 }
 
-
-void make_packet(send_packet_t* packet_out, arguments_t* args) {
-    packet_out->network_timestamp = htonll(args->timestamp);
-    packet_out->c = args->c;
+void clear_buffer() {
+    memset(&buffer, 0, sizeof(buffer));
 }
 
-void send_bytes(int sock, void* bytes, int length, sockaddr_t* sockaddr) {
-    sendto(sock, bytes, length, 0, (struct sockaddr*)sockaddr,
-           (socklen_t)sizeof(sockaddr_t));
+bool is_ipv6_address(const char* str) {
+    struct sockaddr_in6 sa;
+    return inet_pton(AF_INET6, str, &(sa.sin6_addr)) != 0;
 }
 
-int receive_bytes(int sock,
-                  void* buffer,
-                  int max_length,
-                  sockaddr_t* sockaddr_out) {
-    socklen_t socklen = (socklen_t)sizeof(sockaddr_t);
-    return recvfrom(sock, buffer, max_length, 0, (struct sockaddr*)sockaddr_out,
-                    &socklen);
+int parse_event(char* buff) {
+    msg_event_t event;
+    event.header = *((msg_event_header_t*)buff);
+    buff += sizeof(msg_event_header_t);
+
+    switch (event.header.event_type) {
+        case NEW_GAME:
+            event.event_data.new_game.player_names_size =
+                ntohl(event.header.len) - sizeof(msg_event_header_t) -
+                3 * sizeof(uint32_t);
+            event.event_data.new_game.maxx = *((uint32_t*)buff);
+            buff += sizeof(uint32_t);
+            event.event_data.new_game.maxy = *((uint32_t*)buff);
+            buff += sizeof(uint32_t);
+            memcpy(buff, event.event_data.new_game.player_names,
+                   event.event_data.new_game.player_names_size);
+            substitute(event.event_data.new_game.player_names,
+                       event.event_data.new_game.player_names_size - 1, 0, ' ');
+            buff += event.event_data.new_game.player_names_size;
+            break;
+        case PIXEL:
+            event.event_data.pixel = *((msg_event_data_pixel_t*)buff);
+            buff += sizeof(msg_event_data_pixel_t);
+            break;
+        case PLAYER_ELIMINATED:
+            event.event_data.player_eliminated =
+                *((msg_event_data_player_eliminated_t*)buffer);
+            buff += sizeof(msg_event_data_player_eliminated_t);
+            break;
+    }
+    event.crc32 = ntohl(*((uint32_t*)buff));
+    buff += sizeof(uint32_t);
+
+    event.header = msg_event_header_ntoh(event.header);
+    switch (event.header.event_type) {
+        case NEW_GAME:
+            event.event_data.new_game.maxx =
+                ntohl(event.event_data.new_game.maxx);
+            event.event_data.new_game.maxy =
+                ntohl(event.event_data.new_game.maxy);
+            break;
+        case PIXEL:
+            event.event_data.pixel.x = ntohl(event.event_data.pixel.x);
+            event.event_data.pixel.y = ntohl(event.event_data.pixel.y);
+            break;
+    }
+
+    // TODO: sanity check - "czy wartości mają sens?"
+
+    if (event.crc32 == crc32((char*)&event, event.header.len)) {
+        if (events.back().header.event_no == event.header.event_no - 1) {
+            if (event.header.event_type <= 3)
+                events.push_back(event);
+            return event.header.len;
+        } else {
+            return MAX_PACKET_SIZE;
+        }
+    } else {
+        return MAX_PACKET_SIZE;
+    }
 }
 
-void err(const char* fmt, ...) {
-    va_list fmt_args;
+int check_sock(int sock) {
+    pollfd_t pollfd;
+    pollfd.fd = sock;
+    pollfd.events = POLLIN;
+    return poll(&pollfd, 1, 1);
+}
 
-    fprintf(stderr, "ERROR: ");
-    va_start(fmt_args, fmt);
-    vfprintf(stderr, fmt, fmt_args);
-    va_end(fmt_args);
-    // fprintf(stderr, " (%d; %s)\n", errno, strerror(errno));
-    exit(EXIT_FAILURE);
+void receive_from_server(int sock, sockaddr_t& incoming_sockaddr) {
+    clear_buffer();
+
+    int r = check_sock(sock);
+    if (r < 0)
+        err("poll");
+    if (r == 0)
+        return;
+
+    int received =
+        receive_bytes(sock, &buffer, sizeof(buffer) - 1, &incoming_sockaddr);
+    if (received < 0) {
+        err("Error reading data from socket\n");
+    }
+
+    char* buff = buffer;
+    int game_id = ntohl(*((uint32_t*)buff));
+    buff += sizeof(uint32_t);
+
+    if(game_id != current_game_id && running) return;
+    current_game_id = game_id;
+
+    while (buff < buffer + 512 &&
+           ntohl(*((uint32_t*)buff)) != 0)  // while len != 0
+        buff += parse_event(buff);
+}
+
+void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args) {
+    msg_from_client_t msg;
+    msg.session_id = session_id;
+    msg.turn_direction = turn_direction;
+    msg.next_expected_event_no = events.back().header.event_no;
+    strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
+    send_bytes(sock, &msg, sizeof_msg_from_client(&msg), &host);
+}
+
+char* get_player_name(char* player_name, int i) {
+    char* ptr = players;
+    for (int k = 0; k < i; k++) {
+        while (*ptr != ' ' && *ptr != '\0')
+            ptr++;
+        ptr++;
+    }
+    char* begin = ptr;
+    while (*ptr != ' ' && *ptr != '\0')
+        ptr++;
+    strncpy(player_name, begin, ptr - begin);
+    return player_name;
+}
+
+void process_events(int sock) {
+    if (last_sent_to_gui < events.back().header.event_no) {
+        for (auto& event : events) {
+            if (event.header.event_no <= last_sent_to_gui)
+                continue;
+            clear_buffer();
+            size_t len;
+            char player_name[65];
+            switch (event.header.event_type) {
+                case NEW_GAME:
+                    len = sprintf(buffer, "NEW_GAME %d %d %s\n",
+                                  event.event_data.new_game.maxx,
+                                  event.event_data.new_game.maxy,
+                                  event.event_data.new_game.player_names);
+                    players = event.event_data.new_game.player_names;
+                    running = true;
+                    break;
+                case PIXEL:
+                    len = sprintf(
+                        buffer, "PIXEL %d %d %s\n", event.event_data.pixel.x,
+                        event.event_data.pixel.y,
+                        get_player_name(player_name,
+                                        event.event_data.pixel.player_number));
+                    break;
+                case PLAYER_ELIMINATED:
+                    len = sprintf(
+                        buffer, "PLAYER_ELIMINATED %s\n",
+                        get_player_name(
+                            player_name,
+                            event.event_data.player_eliminated.player_number));
+                    break;
+                case GAME_OVER:
+                    len = sprintf(buffer, "GAME_OVER\n");
+                    events.clear();
+                    running = false;
+                    break;
+            }
+            write(sock, buffer, len);
+            last_sent_to_gui++;
+        }
+    }
+}
+
+void receive_turn_direction(int sock) {
+    clear_buffer();
+    read(sock, buffer, MAX_PACKET_SIZE - 1);
+    if (!strcmp(buffer, "LEFT_KEY_DOWN"))
+        turn_direction -= 1;
+    else if (!strcmp(buffer, "LEFT_KEY_UP"))
+        turn_direction += 1;
+    else if (!strcmp(buffer, "RIGHT_KEY_DOWN"))
+        turn_direction += 1;
+    else if (!strcmp(buffer, "RIGHT_KEY_UP"))
+        turn_direction -= 1;
+}
+
+bool every_20ms() {
+    static struct timespec prev = {0, 0};
+    static struct timespec next = {0, 0};
+
+    if (clock_gettime(CLOCK_MONOTONIC, &next))
+        err("clock_gettime");
+    if (next.tv_sec > prev.tv_sec ||
+        next.tv_nsec - prev.tv_nsec > 20000000) {  // 20ms
+        prev = next;
+        return true;
+    }
+    return false;
 }

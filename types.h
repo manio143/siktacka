@@ -16,6 +16,10 @@ typedef struct msg_from_client {
 	char player_name[65];
 } __attribute__((packed)) msg_from_client_t;
 
+size_t sizeof_msg_from_client(msg_from_client_t * msg) {
+    return sizeof(msg->session_id) + sizeof(msg->turn_direction) + sizeof(msg->next_expected_event_no) + strlen(msg->player_name);
+}
+
 typedef struct msg_event_header {
     uint32_t len;
     uint32_t event_no;
@@ -25,7 +29,7 @@ typedef struct msg_event_header {
 typedef struct msg_event_data_new_game {
     uint32_t maxx;
     uint32_t maxy;
-    char * player_names; //\0 separated names
+    char player_names[MAX_PACKET_SIZE]; //\0 separated names
     size_t player_names_size; //not sent
 } __attribute__((packed)) msg_event_data_new_game_t;
 
