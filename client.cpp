@@ -63,17 +63,25 @@ int main(int argc, char** argv) {
     sockaddr_t incoming_sockaddr;
 
     fill_args(&args, argc, argv);
-    get_sockaddr(&host, args.host, args.port, true);
+    printf("ARGS: %s %s %d %s %d\n", args.player_name, args.host, args.port, args.guihost, args.guiport);
+    get_sockaddr(&host, args.host, args.port, true); //TODO:if IPv6 connect by IPv6 else connect by IPv4
+    printf("get_sockaddr on udp host\n");
     get_sockaddr(&gui_host, args.guihost, args.guiport, false);
+    printf("get_sockaddr on tpc gui_host\n");
 
     session_id = time(NULL);
 
     server_sock = socket(PF_INET6, SOCK_DGRAM, 0);
+    printf("Create udp socket\n");
     gui_sock = socket(PF_INET6, SOCK_STREAM, 0);
+    printf("Create tcp socket\n");
     if (server_sock < 0 || gui_sock < 0)
         err("Couldn't create socket\n");
 
-    connect(gui_sock, (sockaddr*)&gui_host, sizeof(gui_host));
+    if(connect(gui_sock, (sockaddr*)&gui_host, sizeof(gui_host)) != 0)
+        err("Couldn't connect to gui server\n");
+
+    printf("Connected to gui\n");
 
     while (true) {
         if (every_20ms())
@@ -245,8 +253,12 @@ void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args) {
     msg_from_client_t msg;
     msg.session_id = session_id;
     msg.turn_direction = turn_direction;
-    msg.next_expected_event_no = events.back().header.event_no;
+    if(events.size() > 0)
+        msg.next_expected_event_no = events.back().header.event_no;
+    else
+        msg.next_expected_event_no = 0;
     strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
+    //printf("Sending request to server\n");
     send_bytes(sock, &msg, sizeof_msg_from_client(&msg), &host);
 }
 
@@ -265,7 +277,7 @@ char* get_player_name(char* player_name, int i) {
 }
 
 void process_events(int sock) {
-    if (last_sent_to_gui < events.back().header.event_no) {
+    if (last_sent_to_gui < (events.size() > 0 ? events.back().header.event_no : 0)) {
         for (auto& event : events) {
             if (event.header.event_no <= last_sent_to_gui)
                 continue;
@@ -301,6 +313,7 @@ void process_events(int sock) {
                     running = false;
                     break;
             }
+            printf("Sending {%s} to gui\n", buffer);
             write(sock, buffer, len);
             last_sent_to_gui++;
         }
@@ -309,15 +322,24 @@ void process_events(int sock) {
 
 void receive_turn_direction(int sock) {
     clear_buffer();
+
+    int r = check_sock(sock);
+    if (r < 0)
+        err("poll");
+    if (r == 0)
+        return;
+
     read(sock, buffer, MAX_PACKET_SIZE - 1);
+    substitute(buffer, 20, '\n', '\0');
+    printf("Received {%s} from gui\n", buffer);
     if (!strcmp(buffer, "LEFT_KEY_DOWN"))
-        turn_direction -= 1;
+        turn_direction = -1;
     else if (!strcmp(buffer, "LEFT_KEY_UP"))
-        turn_direction += 1;
+        turn_direction = 0;
     else if (!strcmp(buffer, "RIGHT_KEY_DOWN"))
-        turn_direction += 1;
+        turn_direction = 1;
     else if (!strcmp(buffer, "RIGHT_KEY_UP"))
-        turn_direction -= 1;
+        turn_direction = 0;
 }
 
 bool every_20ms() {

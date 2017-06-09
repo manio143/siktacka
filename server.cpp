@@ -71,6 +71,7 @@ void clean_clients(time_t time) {
         if (time - clients[i].time < 2 * 60) {
             if (clients[i].player_index > 0) {
                 players[clients[i].player_index].client_index = -1;
+                players[clients[i].player_index].active = false;
                 active_players--;
             }
             clients[i] = clients.back();
@@ -114,6 +115,8 @@ int main(int argc, char** argv) {
     init_socket(&pollfd, args.port);
     sock = pollfd.fd;
 
+    printf("Initialized socket\n");
+
     pixels = new int[maxx * maxy];
 
     bool running = false;
@@ -128,6 +131,7 @@ int main(int argc, char** argv) {
         else if (ret > 0) {
             if (pollfd.revents & POLLIN) {
                 client_t client;
+                //TODO: Why aren't we getting packets from client?
                 auto tup = receive_msg_from_client(pollfd, client);
                 auto next_event_no = get<1>(tup);
                 if (get<0>(tup))
@@ -136,11 +140,14 @@ int main(int argc, char** argv) {
         }
 
         bool start = clients.size() >= 2;
-        for (auto& client : clients)
-            start = start && client.turn_direction != 0;
+        for (auto& client : clients) {
+            //printf("dir: %d ", client.turn_direction);
+            start = start && (client.turn_direction != 0);
+        }
 
         if (!running && start) {
             // GAME INIT
+            printf("Starting game\n");
             running = true;
             game_id = random_next();
             for (size_t i = 0; i < clients.size(); i++) {
@@ -163,6 +170,8 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < players.size(); i++) {
                 auto player = players[i];
 
+                printf("Initialized player {%s}", player.player_name);
+
                 clients[player.client_index].player_index = i;
 
                 player.player_no = i;
@@ -177,6 +186,7 @@ int main(int argc, char** argv) {
         if (running && every_Nms(1 / args.rounds_per_second * 1000)) {
             // GAME_UPDATE
             for (size_t i = 0; i < players.size(); i++) {
+                if(!players[i].active) continue;
                 auto turn_dir = clients[players[i].client_index].turn_direction;
                 if (turn_dir > 0)
                     players[i].direction =
@@ -262,8 +272,8 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
 }
 
 int clients_sock_equal(client_t c1, client_t c2) {
-    return c1.sockaddr.sin_port == c2.sockaddr.sin_port &&
-           c1.sockaddr.sin_addr.s_addr == c2.sockaddr.sin_addr.s_addr;
+    return c1.sockaddr.sin6_port == c2.sockaddr.sin6_port &&
+           c1.sockaddr.sin6_addr.s6_addr == c2.sockaddr.sin6_addr.s6_addr;
 }
 int clients_equal(client_t c1, client_t c2) {
     return clients_sock_equal(c1, c2) && c1.session_id == c2.session_id;
@@ -283,6 +293,8 @@ bool add_client(client_t client) {
             return true;
         } else if (clients_sock_equal(clients[i], client)) {
             if (client.session_id > clients[i].session_id) {
+                players[clients[i].player_index].active = false;
+                active_players--;
                 clients[i] = client;
                 return true;
             } else
@@ -310,6 +322,7 @@ tuple<bool, uint32_t> receive_msg_from_client(pollfd_t& pollfd,
             return make_tuple(false, 0);
     good = good && add_client(client);
     auto retval = lpacket.next_expected_event_no;
+    printf("Received message {->%d, %s, nxt %d}\n", client.turn_direction, client.player_name, lpacket.next_expected_event_no);
     return make_tuple(good, retval);
 }
 
@@ -324,6 +337,7 @@ unsigned int lenstrcpy(char dest[], const char source[]) {
 int curr_event_no = 0;
 
 msg_event_t make_new_game_event() {
+    printf("EVENT: NEW_GAME\n");
     msg_event_t event;
     event.header.event_no = curr_event_no++;
     event.header.event_type = NEW_GAME;
@@ -350,6 +364,7 @@ msg_event_t make_new_game_event() {
 }
 
 msg_event_t eliminate_player(player_state_t& player) {
+    printf("EVENT: PLAYER_ELIMINATED (%d)\n", player.player_no);
     msg_event_t event;
     event.header.event_no = curr_event_no++;
     event.header.event_type = PLAYER_ELIMINATED;
@@ -360,6 +375,7 @@ msg_event_t eliminate_player(player_state_t& player) {
 }
 
 msg_event_t add_pixel(player_state_t& player) {
+    printf("EVENT: PIXEL ([%d, %d] - %d)\n", floor(player.x), floor(player.y), player.player_no);
     msg_event_t event;
     event.header.event_no = curr_event_no++;
     event.header.event_type = PIXEL;
@@ -371,6 +387,7 @@ msg_event_t add_pixel(player_state_t& player) {
 }
 
 msg_event_t game_over_event() {
+    printf("EVENT: GAME_OVER\n");
     msg_event_t event;
     event.header.event_no = curr_event_no++;
     event.header.event_type = GAME_OVER;
@@ -464,6 +481,7 @@ void send_events(int next_event_no, client_t& client) {
             buffer +=
                 write_to_buffer(buffer, next_event_no - events_to_send + i);
 
+        printf("sending events (%d - %d)\n", next_event_no - events_to_send, next_event_no);
         send_bytes(sock, send_buffer, MAX_PACKET_SIZE - space_left,
                    &client.sockaddr);
     }

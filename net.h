@@ -8,6 +8,7 @@
 #define M_NET
 
 #ifdef CLIENT
+//TODO: make also IPv4 versions
 void get_host_addrinfo(addrinfo_t** addr_out,
                        char* host,
                        addrinfo_t* addr_hints, bool udp) {
@@ -15,11 +16,7 @@ void get_host_addrinfo(addrinfo_t** addr_out,
     addr_hints->ai_family = AF_INET6;
     addr_hints->ai_socktype = udp ? SOCK_DGRAM : SOCK_STREAM;
     addr_hints->ai_protocol = udp ? IPPROTO_UDP : IPPROTO_TCP;
-    addr_hints->ai_flags = 0;
-    addr_hints->ai_addrlen = 0;
-    addr_hints->ai_addr = NULL;
-    addr_hints->ai_canonname = NULL;
-    addr_hints->ai_next = NULL;
+
     if (getaddrinfo(host, NULL, addr_hints, addr_out) != 0) {
         err("getaddrinfo (%s)", host);
     }
@@ -31,10 +28,11 @@ void get_sockaddr(sockaddr_t* sockaddr, char * host, uint16_t port, bool udp) {
 
     get_host_addrinfo(&addr, host, &addr_hints, udp);
 
-    sockaddr->sin_family = AF_INET6;
-    sockaddr->sin_addr.s_addr =
-        ((sockaddr_t*)(addr->ai_addr))->sin_addr.s_addr;  // address IP
-    sockaddr->sin_port = htons(port);
+    memset(sockaddr, 0, sizeof(sockaddr_t));
+    sockaddr->sin6_family = AF_INET6;
+    memcpy(sockaddr->sin6_addr.s6_addr,
+        ((struct sockaddr_in6*)(addr->ai_addr))->sin6_addr.s6_addr, sizeof(struct in6_addr));  // address IP
+    sockaddr->sin6_port = htons(port);
 
     freeaddrinfo(addr);
 }

@@ -78,7 +78,7 @@ typedef struct server_state {
 
 
 typedef struct addrinfo addrinfo_t;
-typedef struct sockaddr_in sockaddr_t;
+typedef struct sockaddr_in6 sockaddr_t;
 typedef struct pollfd pollfd_t;
 
 
