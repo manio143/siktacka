@@ -131,7 +131,6 @@ int main(int argc, char** argv) {
         else if (ret > 0) {
             if (pollfd.revents & POLLIN) {
                 client_t client;
-                //TODO: Why aren't we getting packets from client?
                 auto tup = receive_msg_from_client(pollfd, client);
                 auto next_event_no = get<1>(tup);
                 if (get<0>(tup))
@@ -271,9 +270,12 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
     }
 }
 
+int sock_equal(sockaddr_t & s1, sockaddr_t & s2) {
+    return s1.sin6_port == s2.sin6_port && memcmp(s1.sin6_addr.s6_addr, s2.sin6_addr.s6_addr, sizeof(s2.sin6_addr.s6_addr)) == 0;
+}
+
 int clients_sock_equal(client_t c1, client_t c2) {
-    return c1.sockaddr.sin6_port == c2.sockaddr.sin6_port &&
-           c1.sockaddr.sin6_addr.s6_addr == c2.sockaddr.sin6_addr.s6_addr;
+    return sock_equal(c1.sockaddr, c2.sockaddr);
 }
 int clients_equal(client_t c1, client_t c2) {
     return clients_sock_equal(c1, c2) && c1.session_id == c2.session_id;
@@ -317,8 +319,8 @@ tuple<bool, uint32_t> receive_msg_from_client(pollfd_t& pollfd,
     client.player_index = -1;
     strcpy(client.player_name, lpacket.player_name);
     bool good = true;
-    for (auto& client : clients)
-        if (!strcmp(client.player_name, lpacket.player_name))
+    for (auto& lclient : clients)
+        if (!strcmp(lclient.player_name, lpacket.player_name) && !sock_equal(lclient.sockaddr, client.sockaddr))
             return make_tuple(false, 0);
     good = good && add_client(client);
     auto retval = lpacket.next_expected_event_no;
