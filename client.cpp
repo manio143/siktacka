@@ -229,8 +229,7 @@ void receive_from_server(int sock) {
     else if (pollfd.revents & POLLHUP)
         err("Poll hangup error\n");
     else if (pollfd.revents & POLLERR) {
-        printf("Destination unreachable\n");
-        return;//err("Poll error\n");
+        err("Destination unreachable\n");
     }
 
     int received = recv(sock, &buffer, sizeof(buffer) - 1, 0);
@@ -333,7 +332,16 @@ void receive_turn_direction(int sock) {
     if (r == 0)
         return;
 
-    read(sock, buffer, MAX_PACKET_SIZE - 1);
+
+    if (pollfd.revents & POLLNVAL)
+        err("Invalid socket passed to poll\n");
+    else if (pollfd.revents & POLLHUP)
+        err("Poll hangup error\n");
+    else if (pollfd.revents & POLLERR)
+        err("Poll error\n");
+
+    if(read(sock, buffer, MAX_PACKET_SIZE - 1) <= 0)
+        err("Cannot read from gui\n");
     substitute(buffer, 20, '\n', '\0');
     printf("Received {%s} from gui\n", buffer);
     if (!strcmp(buffer, "LEFT_KEY_DOWN"))
