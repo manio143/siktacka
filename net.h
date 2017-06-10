@@ -66,11 +66,15 @@ int connect_to(char* host, int port, int sock_type) {
     sockaddr4_t addrip4;
     int sock = -1;
 
+    printf("Connecting to %s:%d over %s\n", host, port, sock_type == UDP ? "UDP" : "TCP");
+
+    printf("Trying with IPv6\n");
     if (!get_sockaddr6(&addrip6, host, port, sock_type == UDP))
         sock = socket(AF_INET6, sock_type == UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
     if (sock < 0 || connect(sock, (sockaddr*)&addrip6, sizeof(addrip6)) != 0) {
         // IPv4 check
         close(sock);
+        printf("Retrying with IPv4\n");
         get_sockaddr4(&addrip4, host, port, sock_type == UDP);
         sock = socket(AF_INET, sock_type == UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (connect(sock, (sockaddr*)&addrip4, sizeof(addrip4)) != 0)

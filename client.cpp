@@ -64,12 +64,12 @@ int main(int argc, char** argv) {
     fill_args(&args, argc, argv);
 
     server_sock = connect_to(args.host, args.port, UDP);
-    if(server_sock < 0)
+    if (server_sock < 0)
         err("Couldn't connect to server\n");
     printf("Connected to server\n");
 
     gui_sock = connect_to(args.guihost, args.guiport, TCP);
-    if(gui_sock < 0)
+    if (gui_sock < 0)
         err("Couldn't connect to gui\n");
     printf("Connected to gui\n");
 
@@ -205,33 +205,45 @@ int parse_event(char* buff) {
     }
 }
 
-int check_sock(int sock) {
-    pollfd_t pollfd;
+int check_sock(int sock, pollfd_t& pollfd) {
     pollfd.fd = sock;
     pollfd.events = POLLIN;
     return poll(&pollfd, 1, 1);
 }
 
 void receive_from_server(int sock) {
+    pollfd_t pollfd;
+
     clear_buffer();
 
-    int r = check_sock(sock);
+    int r = check_sock(sock, pollfd);
     if (r < 0)
         err("poll");
     if (r == 0)
         return;
 
-    int received =
-        recv(sock, &buffer, sizeof(buffer) - 1, 0);
+    if(pollfd.revents & POLLIN)
+        printf("Datagram arrived\n");
+    if (pollfd.revents & POLLNVAL)
+        err("Invalid socket passed to poll\n");
+    else if (pollfd.revents & POLLHUP)
+        err("Poll hangup error\n");
+    else if (pollfd.revents & POLLERR) {
+        printf("Destination unreachable\n");
+        return;//err("Poll error\n");
+    }
+
+    int received = recv(sock, &buffer, sizeof(buffer) - 1, 0);
     if (received < 0) {
-        err("Error reading data from socket\n");
+        err("Error reading data from socket (%d)\n", received);
     }
 
     char* buff = buffer;
     int game_id = ntohl(*((uint32_t*)buff));
     buff += sizeof(uint32_t);
 
-    if(game_id != current_game_id && running) return;
+    if (game_id != current_game_id && running)
+        return;
     current_game_id = game_id;
 
     while (buff < buffer + 512 &&
@@ -243,12 +255,12 @@ void send_request_to_server(int sock, arguments_t& args) {
     msg_from_client_t msg;
     msg.session_id = session_id;
     msg.turn_direction = turn_direction;
-    if(events.size() > 0)
+    if (events.size() > 0)
         msg.next_expected_event_no = events.back().header.event_no;
     else
         msg.next_expected_event_no = 0;
     strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
-    //printf("Sending request to server\n");
+    // printf("Sending request to server\n");
     send(sock, &msg, sizeof_msg_from_client(&msg), 0);
 }
 
@@ -267,7 +279,8 @@ char* get_player_name(char* player_name, int i) {
 }
 
 void process_events(int sock) {
-    if (last_sent_to_gui < (events.size() > 0 ? events.back().header.event_no : 0)) {
+    if (last_sent_to_gui <
+        (events.size() > 0 ? events.back().header.event_no : 0)) {
         for (auto& event : events) {
             if (event.header.event_no <= last_sent_to_gui)
                 continue;
@@ -311,9 +324,10 @@ void process_events(int sock) {
 }
 
 void receive_turn_direction(int sock) {
+    pollfd_t pollfd;
     clear_buffer();
 
-    int r = check_sock(sock);
+    int r = check_sock(sock, pollfd);
     if (r < 0)
         err("poll");
     if (r == 0)
