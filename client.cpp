@@ -222,7 +222,7 @@ void receive_from_server(int sock) {
         return;
 
     int received =
-        read(sock, &buffer, sizeof(buffer) - 1);
+        recv(sock, &buffer, sizeof(buffer) - 1, 0);
     if (received < 0) {
         err("Error reading data from socket\n");
     }
@@ -249,7 +249,7 @@ void send_request_to_server(int sock, arguments_t& args) {
         msg.next_expected_event_no = 0;
     strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
     //printf("Sending request to server\n");
-    write(sock, &msg, sizeof_msg_from_client(&msg));
+    send(sock, &msg, sizeof_msg_from_client(&msg), 0);
 }
 
 char* get_player_name(char* player_name, int i) {
