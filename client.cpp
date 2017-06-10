@@ -37,8 +37,8 @@ using namespace std;
 bool is_ipv6_address(const char* str);
 void fill_args(arguments_t* args_out, int argc, char** argv);
 
-void receive_from_server(int sock, sockaddr_t& incoming_sockaddr);
-void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args);
+void receive_from_server(int sock);
+void send_request_to_server(int sock, arguments_t& args);
 void process_events(int sock);
 void receive_turn_direction(int sock);
 
@@ -58,35 +58,25 @@ int current_game_id;
 int main(int argc, char** argv) {
     int server_sock, gui_sock;
     arguments_t args;
-    sockaddr_t host;
-    sockaddr_t gui_host;
-    sockaddr_t incoming_sockaddr;
-
-    fill_args(&args, argc, argv);
-    printf("ARGS: %s %s %d %s %d\n", args.player_name, args.host, args.port, args.guihost, args.guiport);
-    get_sockaddr(&host, args.host, args.port, true); //TODO:if IPv6 connect by IPv6 else connect by IPv4
-    printf("get_sockaddr on udp host\n");
-    get_sockaddr(&gui_host, args.guihost, args.guiport, false);
-    printf("get_sockaddr on tpc gui_host\n");
 
     session_id = time(NULL);
 
-    server_sock = socket(PF_INET6, SOCK_DGRAM, 0);
-    printf("Create udp socket\n");
-    gui_sock = socket(PF_INET6, SOCK_STREAM, 0);
-    printf("Create tcp socket\n");
-    if (server_sock < 0 || gui_sock < 0)
-        err("Couldn't create socket\n");
+    fill_args(&args, argc, argv);
 
-    if(connect(gui_sock, (sockaddr*)&gui_host, sizeof(gui_host)) != 0)
-        err("Couldn't connect to gui server\n");
+    server_sock = connect_to(args.host, args.port, UDP);
+    if(server_sock < 0)
+        err("Couldn't connect to server\n");
+    printf("Connected to server\n");
 
+    gui_sock = connect_to(args.guihost, args.guiport, TCP);
+    if(gui_sock < 0)
+        err("Couldn't connect to gui\n");
     printf("Connected to gui\n");
 
     while (true) {
         if (every_20ms())
-            send_request_to_server(server_sock, host, args);
-        receive_from_server(server_sock, incoming_sockaddr);
+            send_request_to_server(server_sock, args);
+        receive_from_server(server_sock);
         process_events(gui_sock);
         receive_turn_direction(gui_sock);
     }
@@ -222,7 +212,7 @@ int check_sock(int sock) {
     return poll(&pollfd, 1, 1);
 }
 
-void receive_from_server(int sock, sockaddr_t& incoming_sockaddr) {
+void receive_from_server(int sock) {
     clear_buffer();
 
     int r = check_sock(sock);
@@ -232,7 +222,7 @@ void receive_from_server(int sock, sockaddr_t& incoming_sockaddr) {
         return;
 
     int received =
-        receive_bytes(sock, &buffer, sizeof(buffer) - 1, &incoming_sockaddr);
+        read(sock, &buffer, sizeof(buffer) - 1);
     if (received < 0) {
         err("Error reading data from socket\n");
     }
@@ -249,7 +239,7 @@ void receive_from_server(int sock, sockaddr_t& incoming_sockaddr) {
         buff += parse_event(buff);
 }
 
-void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args) {
+void send_request_to_server(int sock, arguments_t& args) {
     msg_from_client_t msg;
     msg.session_id = session_id;
     msg.turn_direction = turn_direction;
@@ -259,7 +249,7 @@ void send_request_to_server(int sock, sockaddr_t& host, arguments_t& args) {
         msg.next_expected_event_no = 0;
     strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
     //printf("Sending request to server\n");
-    send_bytes(sock, &msg, sizeof_msg_from_client(&msg), &host);
+    write(sock, &msg, sizeof_msg_from_client(&msg));
 }
 
 char* get_player_name(char* player_name, int i) {
