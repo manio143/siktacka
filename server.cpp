@@ -67,8 +67,8 @@ bool every_Nms(int n);
 int active_players = 0;
 
 void clean_clients(time_t time) {
-    for (size_t i = 1; i < clients.size(); i++)
-        if (time - clients[i].time < 2 * 60) {
+    for (size_t i = 0; i < clients.size(); i++)
+        if (time - clients[i].time > 2 * 60) {
             if (clients[i].player_index > 0) {
                 players[clients[i].player_index].client_index = -1;
                 players[clients[i].player_index].active = false;
