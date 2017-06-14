@@ -143,24 +143,28 @@ bool is_ipv6_address(const char* str) {
     return inet_pton(AF_INET6, str, &(sa.sin6_addr)) != 0;
 }
 
-int parse_event(char* buff) {
+size_t event_to_str_buffer(char* buffer, msg_event_t & event);
+
+char* parse_event(char* buff) {
     msg_event_t event;
     event.header = *((msg_event_header_t*)buff);
     buff += sizeof(msg_event_header_t);
+    
+    if(buff + ntohl(event.header.len) > buffer + MAX_PACKET_SIZE)
+        return buff + MAX_PACKET_SIZE;
 
     switch (event.header.event_type) {
         case NEW_GAME:
             event.event_data.new_game.player_names_size =
-                ntohl(event.header.len) - sizeof(msg_event_header_t) -
-                3 * sizeof(uint32_t);
+                ntohl(event.header.len) - (msg_event_header_size) -
+                2 * sizeof(uint32_t);
             event.event_data.new_game.maxx = *((uint32_t*)buff);
             buff += sizeof(uint32_t);
             event.event_data.new_game.maxy = *((uint32_t*)buff);
             buff += sizeof(uint32_t);
-            memcpy(buff, event.event_data.new_game.player_names,
+            memset(event.event_data.new_game.player_names, 0 , sizeof(event.event_data.new_game.player_names));
+            memcpy(event.event_data.new_game.player_names, buff,
                    event.event_data.new_game.player_names_size);
-            substitute(event.event_data.new_game.player_names,
-                       event.event_data.new_game.player_names_size - 1, 0, ' ');
             buff += event.event_data.new_game.player_names_size;
             break;
         case PIXEL:
@@ -175,6 +179,8 @@ int parse_event(char* buff) {
     }
     event.crc32 = ntohl(*((uint32_t*)buff));
     buff += sizeof(uint32_t);
+
+    bool crc_check = event.crc32 == crc32((char*)&event, ntohl(event.header.len) + sizeof(event.header.len));
 
     event.header = msg_event_header_ntoh(event.header);
     switch (event.header.event_type) {
@@ -192,16 +198,25 @@ int parse_event(char* buff) {
 
     // TODO: sanity check - "czy wartości mają sens?"
 
-    if (event.crc32 == crc32((char*)&event, event.header.len)) {
-        if (events.back().header.event_no == event.header.event_no - 1) {
+    if(event.header.event_type == NEW_GAME)
+        substitute(event.event_data.new_game.player_names,
+                event.event_data.new_game.player_names_size - 1, 0, ' ');
+    
+    //DEBUG
+    char b[512];
+    size_t l = event_to_str_buffer(b, event);
+    printf("%s", b);
+
+    if (crc_check) {
+        if ((events.size() < 1 && event.header.event_no == 0) || events.back().header.event_no == event.header.event_no - 1) {
             if (event.header.event_type <= 3)
                 events.push_back(event);
-            return event.header.len;
+            return buff;
         } else {
-            return MAX_PACKET_SIZE;
+            return buff + MAX_PACKET_SIZE;
         }
     } else {
-        return MAX_PACKET_SIZE;
+        return buff + MAX_PACKET_SIZE;
     }
 }
 
@@ -222,8 +237,6 @@ void receive_from_server(int sock) {
     if (r == 0)
         return;
 
-    if(pollfd.revents & POLLIN)
-        printf("Datagram arrived\n");
     if (pollfd.revents & POLLNVAL)
         err("Invalid socket passed to poll\n");
     else if (pollfd.revents & POLLHUP)
@@ -237,6 +250,8 @@ void receive_from_server(int sock) {
         err("Error reading data from socket (%d)\n", received);
     }
 
+    write(3, buffer, received);
+
     char* buff = buffer;
     int game_id = ntohl(*((uint32_t*)buff));
     buff += sizeof(uint32_t);
@@ -247,7 +262,7 @@ void receive_from_server(int sock) {
 
     while (buff < buffer + 512 &&
            ntohl(*((uint32_t*)buff)) != 0)  // while len != 0
-        buff += parse_event(buff);
+        buff = parse_event(buff);
 }
 
 void send_request_to_server(int sock, arguments_t& args) {
@@ -259,11 +274,17 @@ void send_request_to_server(int sock, arguments_t& args) {
     else
         msg.next_expected_event_no = 0;
     strncpy(msg.player_name, args.player_name, sizeof(msg.player_name));
+    msg = msg_from_client_hton(msg);
     // printf("Sending request to server\n");
+    write(3, &msg, sizeof_msg_from_client(&msg));
     send(sock, &msg, sizeof_msg_from_client(&msg), 0);
 }
 
 char* get_player_name(char* player_name, int i) {
+    if(players == NULL) {
+        *player_name = '\0';
+        return player_name;
+    }
     char* ptr = players;
     for (int k = 0; k < i; k++) {
         while (*ptr != ' ' && *ptr != '\0')
@@ -277,6 +298,37 @@ char* get_player_name(char* player_name, int i) {
     return player_name;
 }
 
+size_t event_to_str_buffer(char* buffer, msg_event_t & event) {
+    size_t len;
+    char player_name[65];
+    switch (event.header.event_type) {
+        case NEW_GAME:
+            len = sprintf(buffer, "NEW_GAME %d %d %s\n",
+                          event.event_data.new_game.maxx,
+                          event.event_data.new_game.maxy,
+                          event.event_data.new_game.player_names);
+            break;
+        case PIXEL:
+            len =
+                sprintf(buffer, "PIXEL %d %d %s\n", event.event_data.pixel.x,
+                        event.event_data.pixel.y,
+                        get_player_name(player_name,
+                                        event.event_data.pixel.player_number));
+            break;
+        case PLAYER_ELIMINATED:
+            len =
+                sprintf(buffer, "PLAYER_ELIMINATED %s\n",
+                        get_player_name(
+                            player_name,
+                            event.event_data.player_eliminated.player_number));
+            break;
+        case GAME_OVER:
+            len = sprintf(buffer, "GAME_OVER\n");
+            break;
+    }
+    return len;
+}
+
 void process_events(int sock) {
     if (last_sent_to_gui <
         (events.size() > 0 ? events.back().header.event_no : 0)) {
@@ -284,36 +336,13 @@ void process_events(int sock) {
             if (event.header.event_no <= last_sent_to_gui)
                 continue;
             clear_buffer();
-            size_t len;
-            char player_name[65];
-            switch (event.header.event_type) {
-                case NEW_GAME:
-                    len = sprintf(buffer, "NEW_GAME %d %d %s\n",
-                                  event.event_data.new_game.maxx,
-                                  event.event_data.new_game.maxy,
-                                  event.event_data.new_game.player_names);
-                    players = event.event_data.new_game.player_names;
-                    running = true;
-                    break;
-                case PIXEL:
-                    len = sprintf(
-                        buffer, "PIXEL %d %d %s\n", event.event_data.pixel.x,
-                        event.event_data.pixel.y,
-                        get_player_name(player_name,
-                                        event.event_data.pixel.player_number));
-                    break;
-                case PLAYER_ELIMINATED:
-                    len = sprintf(
-                        buffer, "PLAYER_ELIMINATED %s\n",
-                        get_player_name(
-                            player_name,
-                            event.event_data.player_eliminated.player_number));
-                    break;
-                case GAME_OVER:
-                    len = sprintf(buffer, "GAME_OVER\n");
-                    events.clear();
-                    running = false;
-                    break;
+            size_t len = event_to_str_buffer(buffer, event);
+            if(event.header.event_type == NEW_GAME) {
+                players = event.event_data.new_game.player_names;
+                running = true;
+            } else if (event.header.event_type == GAME_OVER) {
+                events.clear();
+                running = false;
             }
             printf("Sending {%s} to gui\n", buffer);
             write(sock, buffer, len);
@@ -332,7 +361,6 @@ void receive_turn_direction(int sock) {
     if (r == 0)
         return;
 
-
     if (pollfd.revents & POLLNVAL)
         err("Invalid socket passed to poll\n");
     else if (pollfd.revents & POLLHUP)
@@ -340,7 +368,7 @@ void receive_turn_direction(int sock) {
     else if (pollfd.revents & POLLERR)
         err("Poll error\n");
 
-    if(read(sock, buffer, MAX_PACKET_SIZE - 1) <= 0)
+    if (read(sock, buffer, MAX_PACKET_SIZE - 1) <= 0)
         err("Cannot read from gui\n");
     substitute(buffer, 20, '\n', '\0');
     printf("Received {%s} from gui\n", buffer);

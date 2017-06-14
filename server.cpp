@@ -140,8 +140,8 @@ int main(int argc, char** argv) {
 
         bool start = clients.size() >= 2;
         for (auto& client : clients) {
-            //printf("dir: %d ", client.turn_direction);
-            start = start && (client.turn_direction != 0);
+            if(strcmp(client.player_name, ""))
+                start = start && (client.turn_direction != 0);
         }
 
         if (!running && start) {
@@ -397,7 +397,7 @@ msg_event_t game_over_event() {
 }
 
 void prepare_event(msg_event_t& event) {
-    event.header.len = sizeof(msg_event_header_t);
+    event.header.len = (msg_event_header_size);
     switch (event.header.event_type) {
         case NEW_GAME:
             event.header.len += 2 * sizeof(uint32_t) +
@@ -410,9 +410,6 @@ void prepare_event(msg_event_t& event) {
             event.header.len += sizeof(msg_event_data_player_eliminated_t);
             break;
     }
-    // CRC
-    event.header.len += sizeof(uint32_t);
-    event.crc32 = htonl(crc32((char*)&event, event.header.len));
 
     event.header = msg_event_header_hton(event.header);
     switch (event.header.event_type) {
@@ -425,6 +422,9 @@ void prepare_event(msg_event_t& event) {
             event.event_data.pixel.y = htonl(event.event_data.pixel.y);
             break;
     }
+    // CRC
+    //event.header.len += sizeof(uint32_t); //len nie obejmuje CRC
+    event.crc32 = htonl(crc32((char*)&event, event.header.len));
 }
 
 char send_buffer[MAX_PACKET_SIZE];

@@ -26,6 +26,8 @@ typedef struct msg_event_header {
     uint8_t event_type;
 } __attribute__((packed)) msg_event_header_t;
 
+#define msg_event_header_size   sizeof(msg_event_header_t) - sizeof(uint32_t)
+
 typedef struct msg_event_data_new_game {
     uint32_t maxx;
     uint32_t maxy;
