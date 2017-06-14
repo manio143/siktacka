@@ -1,5 +1,9 @@
 // net.h
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include "types.h"
 #include "err.h"
@@ -66,7 +70,8 @@ int connect_to(char* host, int port, int sock_type) {
     sockaddr4_t addrip4;
     int sock = -1;
 
-    printf("Connecting to %s:%d over %s\n", host, port, sock_type == UDP ? "UDP" : "TCP");
+    printf("Connecting to %s:%d over %s\n", host, port,
+           sock_type == UDP ? "UDP" : "TCP");
 
     printf("Trying with IPv6\n");
     if (!get_sockaddr6(&addrip6, host, port, sock_type == UDP))
@@ -79,6 +84,14 @@ int connect_to(char* host, int port, int sock_type) {
         sock = socket(AF_INET, sock_type == UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
         if (connect(sock, (sockaddr*)&addrip4, sizeof(addrip4)) != 0)
             return -1;
+    }
+    if (sock_type == TCP) {
+        int flag = 1;
+        setsockopt(sock,         /* socket affected */
+                   IPPROTO_TCP,  /* set option at TCP level */
+                   TCP_NODELAY,  /* name of option */
+                   (char*)&flag, /* the cast is historical cruft */
+                   sizeof(int)); /* length of option value */
     }
     return sock;
 }

@@ -11,7 +11,4 @@
 #define PLAYER_ELIMINATED 2
 #define GAME_OVER 3
 
-const int maxx = 40;
-const int maxy = 40;
-
 #endif

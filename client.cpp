@@ -98,10 +98,14 @@ void break_string_on_delim(char* str, char delim, char** out_second_str) {
     }
 }
 
-void substitute(char* str, size_t max_length, char from, char to) {
+int substitute(char* str, size_t max_length, char from, char to) {
+    int last_sub = 0;
     for (size_t i = 0; i < max_length; i++)
-        if (*(str + i) == from)
+        if (*(str + i) == from) {
             *(str + i) = to;
+            last_sub = i;
+        }
+    return last_sub;
 }
 
 void fill_args(arguments_t* args_out, int argc, char** argv) {
@@ -143,26 +147,27 @@ bool is_ipv6_address(const char* str) {
     return inet_pton(AF_INET6, str, &(sa.sin6_addr)) != 0;
 }
 
-size_t event_to_str_buffer(char* buffer, msg_event_t & event);
+size_t event_to_str_buffer(char* buffer, msg_event_t& event);
 
 char* parse_event(char* buff) {
     msg_event_t event;
     event.header = *((msg_event_header_t*)buff);
     buff += sizeof(msg_event_header_t);
-    
-    if(buff + ntohl(event.header.len) > buffer + MAX_PACKET_SIZE)
+
+    if (buff + ntohl(event.header.len) > buffer + MAX_PACKET_SIZE)
         return buff + MAX_PACKET_SIZE;
 
     switch (event.header.event_type) {
         case NEW_GAME:
             event.event_data.new_game.player_names_size =
-                ntohl(event.header.len) - (msg_event_header_size) -
-                2 * sizeof(uint32_t);
+                ntohl(event.header.len) -
+                (msg_event_header_size)-2 * sizeof(uint32_t);
             event.event_data.new_game.maxx = *((uint32_t*)buff);
             buff += sizeof(uint32_t);
             event.event_data.new_game.maxy = *((uint32_t*)buff);
             buff += sizeof(uint32_t);
-            memset(event.event_data.new_game.player_names, 0 , sizeof(event.event_data.new_game.player_names));
+            memset(event.event_data.new_game.player_names, 0,
+                   sizeof(event.event_data.new_game.player_names));
             memcpy(event.event_data.new_game.player_names, buff,
                    event.event_data.new_game.player_names_size);
             buff += event.event_data.new_game.player_names_size;
@@ -180,7 +185,9 @@ char* parse_event(char* buff) {
     event.crc32 = ntohl(*((uint32_t*)buff));
     buff += sizeof(uint32_t);
 
-    bool crc_check = event.crc32 == crc32((char*)&event, ntohl(event.header.len) + sizeof(event.header.len));
+    bool crc_check = event.crc32 ==
+                     crc32((char*)&event,
+                           ntohl(event.header.len) + sizeof(event.header.len));
 
     event.header = msg_event_header_ntoh(event.header);
     switch (event.header.event_type) {
@@ -196,19 +203,18 @@ char* parse_event(char* buff) {
             break;
     }
 
-    // TODO: sanity check - "czy wartości mają sens?"
-
-    if(event.header.event_type == NEW_GAME)
+    if (event.header.event_type == NEW_GAME)
         substitute(event.event_data.new_game.player_names,
-                event.event_data.new_game.player_names_size - 1, 0, ' ');
-    
-    //DEBUG
-    char b[512];
-    size_t l = event_to_str_buffer(b, event);
-    printf("%s", b);
+                   event.event_data.new_game.player_names_size - 1, 0, ' ');
+
+    // DEBUG
+    // char b[512];
+    // event_to_str_buffer(b, event);
+    // printf("Received from server: %s", b);
 
     if (crc_check) {
-        if ((events.size() < 1 && event.header.event_no == 0) || events.back().header.event_no == event.header.event_no - 1) {
+        if ((events.size() < 1 && event.header.event_no == 0) ||
+            events.back().header.event_no == event.header.event_no - 1) {
             if (event.header.event_type <= 3)
                 events.push_back(event);
             return buff;
@@ -281,7 +287,7 @@ void send_request_to_server(int sock, arguments_t& args) {
 }
 
 char* get_player_name(char* player_name, int i) {
-    if(players == NULL) {
+    if (players == NULL) {
         *player_name = '\0';
         return player_name;
     }
@@ -298,7 +304,7 @@ char* get_player_name(char* player_name, int i) {
     return player_name;
 }
 
-size_t event_to_str_buffer(char* buffer, msg_event_t & event) {
+size_t event_to_str_buffer(char* buffer, msg_event_t& event) {
     size_t len;
     char player_name[65];
     switch (event.header.event_type) {
@@ -331,13 +337,13 @@ size_t event_to_str_buffer(char* buffer, msg_event_t & event) {
 
 void process_events(int sock) {
     if (last_sent_to_gui <
-        (events.size() > 0 ? events.back().header.event_no : 0)) {
+        (int)(events.size() > 0 ? events.back().header.event_no : 0)) {
         for (auto& event : events) {
-            if (event.header.event_no <= last_sent_to_gui)
+            if ((int)event.header.event_no <= last_sent_to_gui)
                 continue;
             clear_buffer();
             size_t len = event_to_str_buffer(buffer, event);
-            if(event.header.event_type == NEW_GAME) {
+            if (event.header.event_type == NEW_GAME) {
                 players = event.event_data.new_game.player_names;
                 running = true;
             } else if (event.header.event_type == GAME_OVER) {
@@ -370,16 +376,20 @@ void receive_turn_direction(int sock) {
 
     if (read(sock, buffer, MAX_PACKET_SIZE - 1) <= 0)
         err("Cannot read from gui\n");
-    substitute(buffer, 20, '\n', '\0');
-    printf("Received {%s} from gui\n", buffer);
-    if (!strcmp(buffer, "LEFT_KEY_DOWN"))
-        turn_direction = -1;
-    else if (!strcmp(buffer, "LEFT_KEY_UP"))
-        turn_direction = 0;
-    else if (!strcmp(buffer, "RIGHT_KEY_DOWN"))
-        turn_direction = 1;
-    else if (!strcmp(buffer, "RIGHT_KEY_UP"))
-        turn_direction = 0;
+    char* buff = buffer;
+    do {
+        int p = substitute(buff, 20, '\n', '\0');
+        printf("Received {%s} from gui\n", buff);
+        if (!strcmp(buff, "LEFT_KEY_DOWN"))
+            turn_direction = -1;
+        else if (!strcmp(buff, "LEFT_KEY_UP"))
+            turn_direction = 0;
+        else if (!strcmp(buff, "RIGHT_KEY_DOWN"))
+            turn_direction = 1;
+        else if (!strcmp(buff, "RIGHT_KEY_UP"))
+            turn_direction = 0;
+        buff = buff + p + 1;
+    } while (*buff != 0);
 }
 
 bool every_20ms() {

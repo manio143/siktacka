@@ -94,9 +94,15 @@ msg_event_t game_over_event();
 
 void send_events(int next_event_no, client_t& client);
 
+int maxx = 0;
+int maxy = 0;
+
 int* pixels;
+int off_board = 1;
 
 int& get_pixel(int x, int y) {
+    if (x < 0 || x > maxx || y < 0 || y > maxy)
+        return off_board;
     return pixels[x * maxy + y];
 }
 int& get_pixel(player_state_t& player) {
@@ -109,6 +115,9 @@ int main(int argc, char** argv) {
     pollfd_t pollfd;
 
     fill_args(&args, argc, argv);
+
+    maxx = args.width;
+    maxy = args.height;
 
     random_init(&args);
 
@@ -124,6 +133,8 @@ int main(int argc, char** argv) {
     do {
         pollfd.revents = 0;
         clean_clients(time(NULL));
+        if (!running)
+            events.clear();
 
         int ret = poll(&pollfd, 1, 1);
         if (ret < 0)
@@ -140,7 +151,7 @@ int main(int argc, char** argv) {
 
         bool start = clients.size() >= 2;
         for (auto& client : clients) {
-            if(strcmp(client.player_name, ""))
+            if (strcmp(client.player_name, ""))
                 start = start && (client.turn_direction != 0);
         }
 
@@ -167,7 +178,7 @@ int main(int argc, char** argv) {
             events.push_back(make_new_game_event());
 
             for (size_t i = 0; i < players.size(); i++) {
-                auto player = players[i];
+                auto& player = players[i];
 
                 printf("Initialized player {%s}", player.player_name);
 
@@ -185,7 +196,8 @@ int main(int argc, char** argv) {
         if (running && every_Nms(1 / args.rounds_per_second * 1000)) {
             // GAME_UPDATE
             for (size_t i = 0; i < players.size(); i++) {
-                if(!players[i].active) continue;
+                if (!players[i].active)
+                    continue;
                 auto turn_dir = clients[players[i].client_index].turn_direction;
                 if (turn_dir > 0)
                     players[i].direction =
@@ -199,7 +211,7 @@ int main(int argc, char** argv) {
 
                 int fx = floor(players[i].x), fy = floor(players[i].y);
 
-                double angle = players[i].direction/360 * 2 * M_PI;
+                double angle = 1.0 * players[i].direction / 360.0 * 2.0 * M_PI;
                 players[i].x += cos(angle);
                 players[i].y += sin(angle);
 
@@ -217,6 +229,8 @@ int main(int argc, char** argv) {
 
         if (active_players == 1) {
             running = false;
+            active_players = 0;
+            players.clear();
             events.push_back(game_over_event());
         }
 
@@ -268,11 +282,10 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
                 o = (char)optopt;
                 if (strstr("WHpstr", &o))
                     err("Option -%c requires an argument.\n", optopt);
-                else if (isprint (optopt))
+                else if (isprint(optopt))
                     err("Unknown option `-%c'.\n", optopt);
                 else
-                    err("Unknown option character `\\x%x'.\n",
-                        optopt);
+                    err("Unknown option character `\\x%x'.\n", optopt);
                 break;
             default:
                 err("Usage: %s [-W n] [-H n] [-p n] [-s n] [-t n] [-r n]\n",
@@ -281,8 +294,10 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
     }
 }
 
-int sock_equal(sockaddr_t & s1, sockaddr_t & s2) {
-    return s1.sin6_port == s2.sin6_port && memcmp(s1.sin6_addr.s6_addr, s2.sin6_addr.s6_addr, sizeof(s2.sin6_addr.s6_addr)) == 0;
+int sock_equal(sockaddr_t& s1, sockaddr_t& s2) {
+    return s1.sin6_port == s2.sin6_port &&
+           memcmp(s1.sin6_addr.s6_addr, s2.sin6_addr.s6_addr,
+                  sizeof(s2.sin6_addr.s6_addr)) == 0;
 }
 
 int clients_sock_equal(client_t c1, client_t c2) {
@@ -293,16 +308,17 @@ int clients_equal(client_t c1, client_t c2) {
 }
 
 int client_exists(client_t client) {
-    for (size_t i = 1; i < clients.size(); i++)
+    for (size_t i = 0; i < clients.size(); i++)
         if (clients_sock_equal(clients[i], client))
             return true;
     return false;
 }
 
 bool add_client(client_t client) {
-    for (size_t i = 1; i < clients.size(); i++) {
+    for (size_t i = 0; i < clients.size(); i++) {
         if (clients_equal(clients[i], client)) {
             clients[i].time = client.time;
+            clients[i].turn_direction = client.turn_direction;
             return true;
         } else if (clients_sock_equal(clients[i], client)) {
             if (client.session_id > clients[i].session_id) {
@@ -331,19 +347,21 @@ tuple<bool, uint32_t> receive_msg_from_client(pollfd_t& pollfd,
     strcpy(client.player_name, lpacket.player_name);
     bool good = true;
     for (auto& lclient : clients)
-        if (!strcmp(lclient.player_name, lpacket.player_name) && !sock_equal(lclient.sockaddr, client.sockaddr))
+        if (!strcmp(lclient.player_name, lpacket.player_name) &&
+            !sock_equal(lclient.sockaddr, client.sockaddr))
             return make_tuple(false, 0);
     good = good && add_client(client);
     auto retval = lpacket.next_expected_event_no;
-    printf("Received message {->%d, %s, nxt %d}\n", client.turn_direction, client.player_name, lpacket.next_expected_event_no);
+    // printf("Received message {->%d, %s, nxt %d}\n", client.turn_direction,
+    // client.player_name, lpacket.next_expected_event_no);
     return make_tuple(good, retval);
 }
 
 unsigned int lenstrcpy(char dest[], const char source[]) {
     unsigned int i = 0;
-    while ((dest[i] = source[i]) != '\0') {
+    do {
         i++;
-    }
+    } while ((dest[i - 1] = source[i - 1]) != '\0');
     return i;
 }
 
@@ -388,7 +406,8 @@ msg_event_t eliminate_player(player_state_t& player) {
 }
 
 msg_event_t add_pixel(player_state_t& player) {
-    printf("EVENT: PIXEL ([%d, %d] - %d)\n", floor(player.x), floor(player.y), player.player_no);
+    printf("EVENT: PIXEL ([%d, %d] - %d)\n", floor(player.x), floor(player.y),
+           player.player_no);
     msg_event_t event;
     event.header.event_no = curr_event_no++;
     event.header.event_type = PIXEL;
@@ -425,8 +444,10 @@ void prepare_event(msg_event_t& event) {
     event.header = msg_event_header_hton(event.header);
     switch (event.header.event_type) {
         case NEW_GAME:
-            event.event_data.new_game.maxx = htonl(event.event_data.new_game.maxx);
-            event.event_data.new_game.maxy = htonl(event.event_data.new_game.maxy);
+            event.event_data.new_game.maxx =
+                htonl(event.event_data.new_game.maxx);
+            event.event_data.new_game.maxy =
+                htonl(event.event_data.new_game.maxy);
             break;
         case PIXEL:
             event.event_data.pixel.x = htonl(event.event_data.pixel.x);
@@ -434,13 +455,13 @@ void prepare_event(msg_event_t& event) {
             break;
     }
     // CRC
-    //event.header.len += sizeof(uint32_t); //len nie obejmuje CRC
-    event.crc32 = htonl(crc32((char*)&event, event.header.len));
+    event.crc32 = htonl(crc32(
+        (char*)&event, ntohl(event.header.len) + sizeof(event.header.len)));
 }
 
 char send_buffer[MAX_PACKET_SIZE];
 
-int write_to_buffer(char* buffer, int idx) {
+char* write_to_buffer(char* buffer, int idx) {
     auto& event = events[idx];
     *((msg_event_header_t*)buffer) = event.header;
     buffer += sizeof(msg_event_header_t);
@@ -467,7 +488,13 @@ int write_to_buffer(char* buffer, int idx) {
     }
     *((uint32_t*)buffer) = event.crc32;
     buffer += sizeof(uint32_t);
-    return event.header.len;
+    return buffer;
+}
+
+size_t prepared_event_size(msg_event_t& event) {
+    size_t size = ntohl(event.header.len) + 2 * sizeof(uint32_t);
+    // printf("event size: %d", size);
+    return size;
 }
 
 void send_events(int next_event_no, client_t& client) {
@@ -480,9 +507,10 @@ void send_events(int next_event_no, client_t& client) {
         size_t space_left = MAX_PACKET_SIZE - sizeof(game_id);
 
         int events_to_send = 0;
-        while (events[next_event_no].header.len < space_left) {
+        while (next_event_no < events.size() &&
+               prepared_event_size(events[next_event_no]) < space_left) {
             events_to_send++;
-            space_left -= events[next_event_no].header.len;
+            space_left -= prepared_event_size(events[next_event_no]);
             next_event_no++;
         }
 
@@ -491,13 +519,15 @@ void send_events(int next_event_no, client_t& client) {
         *((int*)send_buffer) = htonl(game_id);
         char* buffer = send_buffer + sizeof(game_id);
         for (int i = 0; i < events_to_send; i++)
-            buffer +=
+            buffer =
                 write_to_buffer(buffer, next_event_no - events_to_send + i);
 
-        printf("sending events (%d - %d)\n", next_event_no - events_to_send, next_event_no);
+        // printf("sending events (%d - %d)\n", next_event_no - events_to_send,
+        // next_event_no);
         send_bytes(sock, send_buffer, MAX_PACKET_SIZE - space_left,
                    &client.sockaddr);
     }
+    last_event_sent = events.size() - 1;
 }
 
 bool every_Nms(int n) {
