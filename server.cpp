@@ -243,7 +243,8 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
     args_out->random_seed = time(NULL);
 
     int opt;
-    while ((opt = getopt(argc, argv, "WHpstr:")) != -1) {
+    char o;
+    while ((opt = getopt(argc, argv, "W:H:p:s:t:r:")) != -1) {
         switch (opt) {
             case 'W':
                 args_out->width = atoi(optarg);
@@ -262,6 +263,16 @@ void fill_args(arguments_t* args_out, int argc, char** argv) {
                 break;
             case 'r':
                 args_out->random_seed = atol(optarg);
+                break;
+            case '?':
+                o = (char)optopt;
+                if (strstr("WHpstr", &o))
+                    err("Option -%c requires an argument.\n", optopt);
+                else if (isprint (optopt))
+                    err("Unknown option `-%c'.\n", optopt);
+                else
+                    err("Unknown option character `\\x%x'.\n",
+                        optopt);
                 break;
             default:
                 err("Usage: %s [-W n] [-H n] [-p n] [-s n] [-t n] [-r n]\n",
