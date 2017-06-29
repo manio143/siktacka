@@ -27,8 +27,8 @@ class ClientMessage {
     uint32_t nextExpectedEventNumber() { return _nextExpectedEventNumber; }
     std::string playerName() { return _playerName; }
 
-    void* serialize(void* buffer);
-    static void* deserialize(void* buffer, std::shared_ptr<ClientMessage> & message);
+    size_t serialize(void* buffer);
+    static void deserialize(void* buffer, std::shared_ptr<ClientMessage> * message);
 }
 
 class ServerMessage {
@@ -43,6 +43,6 @@ class ServerMessage {
     uint32_t gameId() { return _gameId; }
     vector<std::shared_ptr<Event>> events() { return _events; }
     
-    void* serialize(void* buffer);
-    static void* deserialize(void* buffer, std::shared_ptr<ServerMessage> & message);
+    size_t serialize(void* buffer);
+    static void deserialize(void* buffer, std::shared_ptr<ServerMessage> * message);
 }

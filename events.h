@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <string>
+#include <memory>
 
 #include "const.h"
 #include "binwriter.h"
@@ -22,6 +23,7 @@ class Event {
 
     virtual uint32_t len() { return sizeof(_number) + sizeof(_type); }
     void* serialize(void* buffer);
+    virtual size_t toString(void* buffer) = 0;
 
     virtual ~Event() {}
 }
@@ -57,6 +59,7 @@ class NewGameEvent : public Event {
                                uint32_t maxx,
                                uint32_t maxy,
                                std::vector<std::string> names);
+    virtual size_t toString(void* buffer);
 }
 
 class PixelEvent : public Event {
@@ -65,19 +68,20 @@ class PixelEvent : public Event {
     uint32_t _x, _y;
 
    protected:
-    virtual void serializeData(BinaryWriter& bw)  override;
+    virtual void serializeData(BinaryWriter& bw) override;
 
    public:
     PixelEvent(uint32_t number, uint8_t playerNumber, uint32_t x, uint32_t y)
         : Event(number, PIXEL), _playerNumber(playerNumber), _x(x), _y(y) {}
 
-    uint32_t playerNumber() { return _playerNumber; }
+    uint8_t playerNumber() { return _playerNumber; }
     uint32_t x() { return _x; }
     uint32_t y() { return _y; }
 
     virtual uint32_t len() {
         return Event::len() + sizeof(_playerNumber) + sizeof(_x) + sizeof(_y);
     }
+    virtual size_t toString(void* buffer);
 }
 
 class PlayerEliminatedEvent : public Event {
@@ -91,9 +95,10 @@ class PlayerEliminatedEvent : public Event {
     PlayerEliminatedEvent(uint32_t number, uint8_t playerNumber)
         : Event(number, PLAYER_ELIMINATED), _playerNumber(playerNumber) {}
 
-    uint32_t playerNumber() { return _playerNumber; }
+    uint8_t playerNumber() { return _playerNumber; }
 
     virtual uint32_t len() { return Event::len() + sizeof(_playerNumber); }
+    virtual size_t toString(void* buffer);
 }
 
 class GameOverEvent : public Event {
@@ -102,4 +107,10 @@ class GameOverEvent : public Event {
 
    public:
     GameOver(uint32_t number) : Event(number, GAME_OVER) {}
+    virtual size_t toString(void* buffer) { return 0; }
+}
+
+class EventDeserializer {
+   public:
+    static void* deserialize(void* buff, std::shared_ptr<Event>* event);
 }

@@ -22,6 +22,8 @@ class Sock {
 
 class UdpSock : public Sock {
    public:
+    UdpSock(int sock) : Sock(sock) {}
+
     int readFrom(void* buffer, size_t size, IPAddress& address);
     int writeTo(void* buffer, size_t size, IPAddress& address);
 }
