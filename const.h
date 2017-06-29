@@ -1,9 +1,6 @@
 #ifndef M_CONST
 #define M_CONST
 
-#define TRUE 1
-#define FALSE 0
-
 #define MAX_PACKET_SIZE 512
 
 #define NEW_GAME 0
