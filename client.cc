@@ -31,12 +31,15 @@ class Client {
 
     int nextExpectedEventNumber();
     bool checkForIncomingPackets(Sock& sock);
+    void setPlayerNames(std::string names);
     void sendRequestToServer();
     void receiveFromServer();
     void processEvents(EventContainer& events);
     void sendEventsToGui();
     void receiveTurnDirection();
     bool every20ms();
+
+    char* buffer();
 
    public:
     Client(int argc, char** argv)
@@ -48,6 +51,12 @@ class Client {
     }
 
     void run();
+}
+
+char* Client::buffer() {
+    static vector<char> v(MAX_PACKET_SIZE);
+    memset(&v[0], 0, v.size());
+    return &v[0];
 }
 
 int Client::nextExpectedEventNumber() {
@@ -65,11 +74,19 @@ void Client::sendRequestToServer() {
     _serverSock.write(buffer, len);
 }
 
+void Client::setPlayerNames(std::string names) {
+    std::istringstream f(names);
+    std::string line;
+    while (std::getline(f, line, 0))
+        _players.push_back(line);
+}
+
 void Client::processEvents(EventContainer& events) {
     for (auto& event : events) {
         if (_events.size() == 0 && event->type() == NEW_GAME) {
             _events.push_back(event);
             _running = true;
+            setPlayerNames(static_cast<NewGameEvent>(event).playerNames());
         } else if (event->number() == _events.back().number() + 1)
             _events.push_back(event);
     }
@@ -137,7 +154,7 @@ void Client::receiveTurnDirection() {
 
     char* buffer = this->buffer();
     _guiSock.read(buffer, MAX_PACKET_SIZE);
-    
+
     std::istringstream f(buffer);
     std::string line;
     while (std::getline(f, line)) {

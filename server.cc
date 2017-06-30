@@ -27,9 +27,9 @@ enum State {
 class Server {
    private:
     UdpSock _sock;
-    ServerArguments _arguments; //TODO
-    Random _random; //TODO
-    PixelBoard _pixelBoard; //TODO
+    ServerArguments _arguments;  // TODO
+    Random _random;              // TODO
+    PixelBoard _pixelBoard;      // TODO
     ClientsContainer _clients;
     PlayersContainer _players;
     EventsContainer _events;
@@ -37,7 +37,7 @@ class Server {
 
     uint32_t _gameId;
 
-    void handleIncomingPacket(); //TODO
+    void handleIncomingPacket();  // TODO
     bool checkForIncomingPackets();
 
     void initializePlayers();
@@ -48,13 +48,14 @@ class Server {
 
     void cleanClients();
     int activePlayers();
-    void sendEventsToAll(); //TODO
-    bool nextRound(); //TODO (everyXms)
+    void sendEventsToAll();      // TODO
+    bool nextRound();            // TODO (everyXms)
+    bool clientsReadyToStart();  // TODO
 
-    void onNewGame(); //TODO
-    void onPixel(Player& player); //TODO
-    void onEliminatePlayer(Player& player); //TODO
-    void onGameOver(); //TODO
+    void onNewGame();
+    void onPixel(Player& player);
+    void onEliminatePlayer(Player& player);
+    void onGameOver();
 
    public:
     Server(int argc, char** argv) : _arguments(argc, argv), _state(idle) {
@@ -92,10 +93,50 @@ void Server::cleanClients() {
 
 int Server::activePlayers() {
     int active = 0;
-    for(auto & player : _players)
-        if(player.active)
+    for (auto& player : _players)
+        if (player.active)
             active++;
     return active;
+}
+
+std::vector<std::string> Server::playerNames() {
+    std::vector<std::string> v(_players.size());
+    for (auto& player : _players)
+        v.push_back(player.name);
+    return v;
+}
+
+uint32_t Server::nextEventNumber() {
+    if (_events.size() > 0)
+        return _events.back().number + 1;
+    else
+        return 0;
+}
+
+void Server::onNewGame() {
+    debug("NEW GAME\n");
+    auto ev_ptr = std::make_shared<NewGameEvent>(
+        nextEventNumber(), _arguments.width, _arguments.height, playerNames());
+    _events.push_back(ev_ptr);
+}
+
+void Server::onPixel(Player& player) {
+    debug("PIXEL {%d, %d} - %s\n", player.x(), player.y(), player.name.c_str());
+    _events.push_back(std::make_shared<PixelEvent>(
+        nextEventNumber(), player.number, player.x(), player.y()));
+    _pixelBoard.set(player);
+}
+
+void Server::onPlayerEliminated(Player& player) {
+    debug("PLAYER ELIMINATED - %s\n", player.name.c_str());
+    _event.push_back(std::make_shared<PlayerEliminatedEvent>(nextEventNumber(),
+                                                             player.number));
+    player.active = false;
+}
+
+void Server::onGameOver() {
+    debug("GAME OVER\n");
+    _event.push_back(std::make_shared<GameOverEvent>(nextEventNumber()));
 }
 
 void Server::initializePlayers() {
@@ -120,7 +161,7 @@ void Server::initializePlayers() {
         player.number = i;
         player.active = true;
 
-        debug("Initialized player {%s}", player.player_name);
+        debug("Initialized player {%s}", player.name);
     }
 }
 
@@ -138,7 +179,7 @@ void Server::newGame() {
     onNewGame();
 
     for (auto& player : _players) {
-        if (pixel_board(player))
+        if (_pixelBoard.isSetAndNot(player))
             onEliminatePlayer(player);
         else
             onPixel(player);
@@ -167,7 +208,7 @@ void Server::updateGame() {
 
         int nfx = floor(player.x), nfy = floor(player.y);
         if (fx != nfx || fy != nfy) {
-            if (pixel_board(player))
+            if (_pixelBoard.isSetAndNot(player))
                 onEliminatePlayer(player);
             else
                 onPixel(player);
@@ -187,7 +228,7 @@ void Server::run() {
         if (checkForIncomingPackets())
             handleIncomingPackets();
 
-        if (_state == idle && _clients.readyToStart())
+        if (_state == idle && clientsReadyToStart())
             _state = ready;
 
         if (_state == ready)

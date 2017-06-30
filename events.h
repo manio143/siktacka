@@ -46,6 +46,12 @@ class NewGameEvent : public Event {
           _maxy(maxy),
           _playerNames(playerNames) {}
 
+    NewGameEvent(uint32_t number,
+                 uint32_t maxx,
+                 uint32_t maxy,
+                 std::vector<std::string> names)
+        : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy);  // TODO
+
     uint32_t maxx() { return _maxx; }
     uint32_t maxy() { return _maxy; }
     std::string playerNames() { return _playerNames; }
@@ -55,10 +61,6 @@ class NewGameEvent : public Event {
                _playerNames.size();
     }
 
-    static NewGameEvent create(uint32_t number,
-                               uint32_t maxx,
-                               uint32_t maxy,
-                               std::vector<std::string> names);
     virtual size_t toString(void* buffer);
 }
 
