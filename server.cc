@@ -12,6 +12,8 @@
 #include "connectors.h"
 #include "arguments.h"
 #include "random.h"
+#include "player.h"
+#include "client.h"
 #include "pixelboard.h"
 
 using ClientsContainer = std::vector<Client>;
@@ -27,9 +29,9 @@ enum State {
 class Server {
    private:
     UdpSock _sock;
-    ServerArguments _arguments;  // TODO
-    Random _random;              // TODO
-    PixelBoard _pixelBoard;      // TODO
+    ServerArguments _arguments;
+    Random _random;
+    PixelBoard _pixelBoard;
     ClientsContainer _clients;
     PlayersContainer _players;
     EventsContainer _events;
@@ -48,8 +50,8 @@ class Server {
 
     void cleanClients();
     int activePlayers();
-    void sendEventsToAll();      // TODO
-    bool nextRound();            // TODO (everyXms)
+    void sendEventsToAll();  // TODO
+    bool nextRound();
     bool clientsReadyToStart();  // TODO
 
     void onNewGame();
@@ -65,6 +67,21 @@ class Server {
     }
 
     void run();
+}
+
+bool Server::nextRound() {
+    static struct timespec prev = {0, 0};
+    static struct timespec next = {0, 0};
+
+    int nanosec = (1.0 / _arguments.roundsPerSecond) * 1000 * 1000 * 1000;
+
+    if (clock_gettime(CLOCK_MONOTONIC, &next))
+        err("clock_gettime");
+    if (next.tv_sec > prev.tv_sec || next.tv_nsec - prev.tv_nsec > nanosec) {
+        prev = next;
+        return true;
+    }
+    return false;
 }
 
 bool Server::checkForIncomingPackets() {
@@ -191,22 +208,22 @@ void Server::updateGame() {
         if (!player.active)
             continue;
 
-        auto turn_dir = clients[player.client_index].turn_direction;
+        auto turn_dir = clients[player.clientIndex].turnDirection;
         if (turn_dir > 0)
-            player.direction = (player.direction + args.turning_speed) % 360;
+            player.direction = (player.direction + args.turningSpeed) % 360;
         else if (turn_dir < 0) {
-            player.direction = (player.direction + args.turning_speed) % 360;
+            player.direction = (player.direction + args.turningSpeed) % 360;
             if (player.direction < 0)
                 player.direction += 360;
         }
 
-        int fx = floor(player.x), fy = floor(player.y);
+        int fx = player.x(), fy = player.y();
 
-        double angle = 1.0 * player.direction / 360.0 * 2.0 * M_PI;
+        double angle = ((1.0 * player.direction) / 360.0) * (2.0 * M_PI);
         player.x += cos(angle);
         player.y += sin(angle);
 
-        int nfx = floor(player.x), nfy = floor(player.y);
+        int nfx = player.x(), nfy = player.y();
         if (fx != nfx || fy != nfy) {
             if (_pixelBoard.isSetAndNot(player))
                 onEliminatePlayer(player);
