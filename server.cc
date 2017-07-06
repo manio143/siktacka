@@ -38,8 +38,10 @@ class Server {
     State _state;
 
     uint32_t _gameId;
+    int _lastEventSent = -1;
 
-    void handleIncomingPacket();  // TODO
+    void handleIncomingPacket();
+    bool addOrUpdateClient(Client& client);
     bool checkForIncomingPackets();
 
     void initializePlayers();
@@ -50,9 +52,10 @@ class Server {
 
     void cleanClients();
     int activePlayers();
-    void sendEventsToAll();  // TODO
+    void sendEventsToAll();
+    void sendEvents(Client& client, int nextEvent);
     bool nextRound();
-    bool clientsReadyToStart();  // TODO
+    bool clientsReadyToStart();
 
     void onNewGame();
     void onPixel(Player& player);
@@ -61,12 +64,62 @@ class Server {
 
    public:
     Server(int argc, char** argv) : _arguments(argc, argv), _state(idle) {
-        _sock = UdpConnector::initServer(/*...*/);
+        _sock = UdpConnector::initServer(_arguments.port);
         _random = Random(_arguments.randomSeed);
         _pixelBoard = PixelBoard(_arguments.width, _arguments.height);
     }
 
     void run();
+}
+
+bool Server::addOrUpdateClient(Client & client) {
+    bool send = true;
+    bool update = false;
+    for (size_t i = 0; i < _clients.size(); i++) {
+        auto& lclient = _clients[i];
+        if (lclient == client) {
+            lclient.time = client.time;
+            lclient.turnDirection = client.turnDirection;
+            update = true;
+        } else if (lclient.ip == client.ip) {
+            if (client.sessionId > lclient.sessionId) {
+                if (lclient.playerIndex > 0)
+                    _players[lclient.playerIndex].active = false;
+                _clients[i] = client;
+                update = true;
+            } else {
+                send = false;
+                update = true;
+            }
+        }
+    }
+
+    if (!update)
+        _clients.push_back(client);
+
+    return send;
+}
+
+void Server::handleIncomingPacket() {
+    char buffer[MAX_PACKET_SIZE];
+    memset(buffer, 0, MAX_PACKET_SIZE);
+
+    IPAddress ip;
+
+    _sock.readFrom(buffer, MAX_PACKET_SIZE, ip);
+
+    std::shared_ptr<ClientMessage> msg_ptr;
+    Client::deserialize(buffer, &msg_ptr);
+
+    Client client(msg_ptr->sessionId(), msg_ptr->turnDirection(),
+                  msg_ptr->playerName());
+
+    for (auto& lclient : _clients)
+        if (lclient.playerName == client.playerName && lclient.ip == client.ip)
+            return;
+
+    if (addOrUpdateClient(client))
+        sendEvents(client, msg_ptr->nextExpectedEventNumber());
 }
 
 bool Server::nextRound() {
@@ -125,7 +178,7 @@ std::vector<std::string> Server::playerNames() {
 
 uint32_t Server::nextEventNumber() {
     if (_events.size() > 0)
-        return _events.back().number + 1;
+        return _events.back()->number() + 1;
     else
         return 0;
 }
@@ -156,6 +209,18 @@ void Server::onGameOver() {
     _event.push_back(std::make_shared<GameOverEvent>(nextEventNumber()));
 }
 
+bool Server::clientsReadyToStart() {
+    if (_clients.size() < 2)
+        return false;
+
+    for (auto& client : _clients) {
+        if (client.playerName != ""))
+            if(client.turnDirection == 0)
+                return false;
+    }
+    return true;
+}
+
 void Server::initializePlayers() {
     for (size_t i = 0; i < clients.size(); i++) {
         if (!_clients[i].playerName.empty()) {
@@ -168,7 +233,6 @@ void Server::initializePlayers() {
     }
 
     std::sort(_players.begin(), _players.end());
-    // TODO: Player must implement compare based on playerName
 
     for (size_t i = 0; i < _players.size(); i++) {
         auto& player = _players[i];
@@ -179,6 +243,50 @@ void Server::initializePlayers() {
         player.active = true;
 
         debug("Initialized player {%s}", player.name);
+    }
+}
+
+void Server::sendEventsToAll() {
+    for (auto& client : _clients)
+        sendEvents(client, _lastEventSent + 1);
+    if (_events.size() > 0)
+        _lastEventSent = _events.back()->number();
+}
+
+void Server::sendEvents(Client& client, int nextEvent) {
+    char buffer[MAX_PACKET_SIZE];
+
+    while (nextEvent < _events.size()) {
+        memset(buffer, 0, MAX_PACKET_SIZE);
+
+        size_t size = 0;
+
+        // PREVIOUS IMPLEMENTATION
+        // char* buff = buffer;
+        // while (nextEvent < _events.size()) {
+        //     char* nbuff = _events[nextEvent]->serialize(
+        //         buff, sizeof(buffer) - (buff - buffer));
+        //     if (buff == nbuff)
+        //         break;
+        //     size += (nbuff - buff);
+        //     buff = nbuff;
+        //     nextEvent++;
+        // }
+
+        size_t spaceLeft=MAX_PACKET_SIZE - sizeof(uint32_t);
+        EventsContainer eventsToSend;
+        while(nextEvent < _events.size()) {
+            if(spaceLeft < _events[nextEvent]->totalLen())
+                break;
+            spaceLeft -= _events[nextEvent]->totalLen();
+            eventsToSend.push_back(_events[nextEvent]);
+            nextEvent++;
+        }
+
+        ServerMessage sm(_gameId, eventsToSend);
+        size = sm.serialize(buffer);
+
+        _sock.writeTo(buffer, size, client.ip);
     }
 }
 

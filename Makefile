@@ -1,7 +1,16 @@
+CMD = g++
+CFLAGS  = -g -Wall -std=c++11
+
 all: siktacka-server siktacka-client
 
-siktacka-server: server.cpp types.h net.h const.h hton.h err.h
-	g++ -Wall -g -std=c++11 server.cpp -o siktacka-server
+siktacka-server: server.cc arguments.o connectors.o events.o messages.o sock.o
+	$(CMD) $(CFLAGS) server.cc -o siktacka-server
 
-siktacka-client: client.cpp types.h net.h const.h hton.h err.h
-	g++ -Wall -g -std=c++11 client.cpp -o siktacka-client
+siktacka-client: client.cc arguments.o connectors.o events.o messages.o sock.o
+	$(CMD) $(CFLAGS) client.cc -o siktacka-client
+
+.cc.o:
+	$(CMD) $(CFLAGS) -c $< -o $@
+
+clean: 
+	$(RM) siktacka-server siktacka-client *.o *~

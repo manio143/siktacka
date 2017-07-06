@@ -39,6 +39,9 @@ void* EventDeserializer::deserialize(void* buff,
     BinaryReader br(buff, sizeof(uint32_t));
     auto len = br.read32();
 
+    if (len == 0)
+        return buff + MAX_PACKET_SIZE;
+
     br = BinaryReader(buff, len + 2 * sizeof(uint32_t));
     br.read32();  // move past the len
 

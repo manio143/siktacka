@@ -46,6 +46,7 @@ class BinaryWriter {
     }
 
     void* copyTo(void* buff) { return memcpy(buff, &buffer[0], buffer.size()); }
+    size_t size() { return buffer.size(); }
 }
 
 class BinaryReader {

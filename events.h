@@ -22,6 +22,7 @@ class Event {
     uint8_t type() { return _type; }
 
     virtual uint32_t len() { return sizeof(_number) + sizeof(_type); }
+    uint32_t totalLen() { return len() + 2 * sizeof(uin32_t); }
     void* serialize(void* buffer);
     virtual size_t toString(void* buffer) = 0;
 
@@ -50,7 +51,12 @@ class NewGameEvent : public Event {
                  uint32_t maxx,
                  uint32_t maxy,
                  std::vector<std::string> names)
-        : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy);  // TODO
+        : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy) {
+        for (auto& name : names) {
+            _playerNames.append(name);
+            _playerNames.append('\0');
+        }
+    }
 
     uint32_t maxx() { return _maxx; }
     uint32_t maxy() { return _maxy; }
