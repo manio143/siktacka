@@ -5,9 +5,13 @@
 #include "math.h"
 
 class Player {
+   private:
+    float _x;
+    float _y;
+
    public:
-    Player(float xx, float yy, int direction, std::string name)
-        : x(xx), y(yy), direction(direction), name(name) {}
+    Player(float x, float y, int direction, std::string name)
+        : _x(x), _y(y), direction(direction), name(name) {}
 
     std::string name;
     uint8_t number;
@@ -16,13 +20,14 @@ class Player {
     int clientIndex = -1;
 
     int direction;
-    float x;
-    float y;
 
-    uint32_t x() { return floor(x); }
-    uint32_t y() { return floor(y); }
+    void setX(float x) { _x = x;}
+    void setY(float y) { _y = y;}
 
-    bool operator<(const PLayer& p1, const Player& p2) {
-        return p1.name < p2.name;
+    uint32_t x() { return floor(_x); }
+    uint32_t y() { return floor(_y); }
+
+    bool operator<(const Player& p2) {
+        return name < p2.name;
     }
-}
+};

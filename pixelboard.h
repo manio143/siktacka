@@ -30,4 +30,4 @@ class PixelBoard {
     }
 
     ~PixelBoard() { delete[] pixels; }
-}
+};

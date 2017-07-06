@@ -22,12 +22,12 @@ class Event {
     uint8_t type() { return _type; }
 
     virtual uint32_t len() { return sizeof(_number) + sizeof(_type); }
-    uint32_t totalLen() { return len() + 2 * sizeof(uin32_t); }
-    void* serialize(void* buffer);
-    virtual size_t toString(void* buffer) = 0;
+    uint32_t totalLen() { return len() + 2 * sizeof(uint32_t); }
+    char* serialize(char* buffer);
+    virtual size_t toString(char* buffer) = 0;
 
     virtual ~Event() {}
-}
+};
 
 class NewGameEvent : public Event {
    private:
@@ -67,8 +67,8 @@ class NewGameEvent : public Event {
                _playerNames.size();
     }
 
-    virtual size_t toString(void* buffer);
-}
+    virtual size_t toString(char* buffer);
+};
 
 class PixelEvent : public Event {
    private:
@@ -89,8 +89,8 @@ class PixelEvent : public Event {
     virtual uint32_t len() {
         return Event::len() + sizeof(_playerNumber) + sizeof(_x) + sizeof(_y);
     }
-    virtual size_t toString(void* buffer);
-}
+    virtual size_t toString(char* buffer);
+};
 
 class PlayerEliminatedEvent : public Event {
    private:
@@ -106,19 +106,19 @@ class PlayerEliminatedEvent : public Event {
     uint8_t playerNumber() { return _playerNumber; }
 
     virtual uint32_t len() { return Event::len() + sizeof(_playerNumber); }
-    virtual size_t toString(void* buffer);
-}
+    virtual size_t toString(char* buffer);
+};
 
 class GameOverEvent : public Event {
    protected:
     virtual void serializeData(BinaryWriter& bw) override {}
 
    public:
-    GameOver(uint32_t number) : Event(number, GAME_OVER) {}
-    virtual size_t toString(void* buffer) { return 0; }
-}
+    GameOverEvent(uint32_t number) : Event(number, GAME_OVER) {}
+    virtual size_t toString(char* buffer) { return 0; }
+};
 
 class EventDeserializer {
    public:
-    static void* deserialize(void* buff, std::shared_ptr<Event>* event);
-}
+    static char* deserialize(char* buff, std::shared_ptr<Event>* event);
+};

@@ -8,11 +8,11 @@
 class TcpConnector {
     public:
         static Sock connectTo(std::string host, uint16_t port);
-}
+};
 
 class UdpConnector {
     public:
-        static Sock connectTo(std::string host, uint16_t port);
+        static UdpSock connectTo(std::string host, uint16_t port);
 
         static UdpSock initServer(uint16_t port);
-}
+};

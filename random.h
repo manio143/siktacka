@@ -15,4 +15,4 @@ class Random {
         _seed = (_seed * 279470273) % 4294967291;
         return _value;
     }
-}
+};

@@ -15,16 +15,13 @@
 #include "player.h"
 #include "client.h"
 #include "pixelboard.h"
+#include "err.h"
 
 using ClientsContainer = std::vector<Client>;
 using PlayersContainer = std::vector<Player>;
 using EventsContainer = std::vector<std::shared_ptr<Event>>;
 
-enum State {
-    idle,
-    ready,
-    running
-}
+enum State { idle, ready, running };
 
 class Server {
    private:
@@ -40,7 +37,7 @@ class Server {
     uint32_t _gameId;
     int _lastEventSent = -1;
 
-    void handleIncomingPacket();
+    void handleIncomingPackets();
     bool addOrUpdateClient(Client& client);
     bool checkForIncomingPackets();
 
@@ -56,23 +53,30 @@ class Server {
     void sendEvents(Client& client, int nextEvent);
     bool nextRound();
     bool clientsReadyToStart();
+    std::vector<std::string> playerNames();
+    uint32_t nextEventNumber();
 
     void onNewGame();
     void onPixel(Player& player);
-    void onEliminatePlayer(Player& player);
+    void onPlayerEliminated(Player& player);
     void onGameOver();
 
    public:
-    Server(int argc, char** argv) : _arguments(argc, argv), _state(idle) {
+    Server(int argc, char** argv)
+        : _arguments(argc, argv),
+          _state(idle),
+          _sock(0),
+          _random(0),
+          _pixelBoard(0, 0) {
         _sock = UdpConnector::initServer(_arguments.port);
         _random = Random(_arguments.randomSeed);
         _pixelBoard = PixelBoard(_arguments.width, _arguments.height);
     }
 
     void run();
-}
+};
 
-bool Server::addOrUpdateClient(Client & client) {
+bool Server::addOrUpdateClient(Client& client) {
     bool send = true;
     bool update = false;
     for (size_t i = 0; i < _clients.size(); i++) {
@@ -100,7 +104,7 @@ bool Server::addOrUpdateClient(Client & client) {
     return send;
 }
 
-void Server::handleIncomingPacket() {
+void Server::handleIncomingPackets() {
     char buffer[MAX_PACKET_SIZE];
     memset(buffer, 0, MAX_PACKET_SIZE);
 
@@ -109,7 +113,7 @@ void Server::handleIncomingPacket() {
     _sock.readFrom(buffer, MAX_PACKET_SIZE, ip);
 
     std::shared_ptr<ClientMessage> msg_ptr;
-    Client::deserialize(buffer, &msg_ptr);
+    ClientMessage::deserialize(buffer, &msg_ptr);
 
     Client client(msg_ptr->sessionId(), msg_ptr->turnDirection(),
                   msg_ptr->playerName());
@@ -145,19 +149,21 @@ bool Server::checkForIncomingPackets() {
         return false;
     else
         err("poll encountered an error.\n");
+    return false;
 }
 
 void Server::cleanClients() {
+    auto time = ::time(NULL);
     for (size_t i = 0; i < _clients.size(); i++)
         if (time - _clients[i].time > 2 * 60) {
             if (_clients[i].playerIndex > 0) {
-                _players[clients[i].playerIndex].clientIndex = -1;
-                _players[clients[i].playerIndex].active = false;
+                _players[_clients[i].playerIndex].clientIndex = -1;
+                _players[_clients[i].playerIndex].active = false;
             }
-            _clients[i] = clients.back();
+            _clients[i] = _clients.back();
             _clients.pop_back();
             if (_clients[i].playerIndex > 0)
-                _players[clients[i].playerIndex].clientIndex = i;
+                _players[_clients[i].playerIndex].clientIndex = i;
         }
 }
 
@@ -199,14 +205,14 @@ void Server::onPixel(Player& player) {
 
 void Server::onPlayerEliminated(Player& player) {
     debug("PLAYER ELIMINATED - %s\n", player.name.c_str());
-    _event.push_back(std::make_shared<PlayerEliminatedEvent>(nextEventNumber(),
+    _events.push_back(std::make_shared<PlayerEliminatedEvent>(nextEventNumber(),
                                                              player.number));
     player.active = false;
 }
 
 void Server::onGameOver() {
     debug("GAME OVER\n");
-    _event.push_back(std::make_shared<GameOverEvent>(nextEventNumber()));
+    _events.push_back(std::make_shared<GameOverEvent>(nextEventNumber()));
 }
 
 bool Server::clientsReadyToStart() {
@@ -214,7 +220,7 @@ bool Server::clientsReadyToStart() {
         return false;
 
     for (auto& client : _clients) {
-        if (client.playerName != ""))
+        if (client.playerName != "")
             if(client.turnDirection == 0)
                 return false;
     }
@@ -222,13 +228,13 @@ bool Server::clientsReadyToStart() {
 }
 
 void Server::initializePlayers() {
-    for (size_t i = 0; i < clients.size(); i++) {
+    for (size_t i = 0; i < _clients.size(); i++) {
         if (!_clients[i].playerName.empty()) {
-            Player player((_random.next() % maxx) + 0.5,
-                          (_random.next() % maxy) + 0.5, _random.next() % 360,
-                          clients[i].playerName.substr());
+            Player player((_random.next() % _arguments.width) + 0.5,
+                          (_random.next() % _arguments.height) + 0.5, _random.next() % 360,
+                          _clients[i].playerName.substr());
             player.clientIndex = i;
-            players.push_back(player);
+            _players.push_back(player);
         }
     }
 
@@ -273,10 +279,10 @@ void Server::sendEvents(Client& client, int nextEvent) {
         //     nextEvent++;
         // }
 
-        size_t spaceLeft=MAX_PACKET_SIZE - sizeof(uint32_t);
+        size_t spaceLeft = MAX_PACKET_SIZE - sizeof(uint32_t);
         EventsContainer eventsToSend;
-        while(nextEvent < _events.size()) {
-            if(spaceLeft < _events[nextEvent]->totalLen())
+        while (nextEvent < _events.size()) {
+            if (spaceLeft < _events[nextEvent]->totalLen())
                 break;
             spaceLeft -= _events[nextEvent]->totalLen();
             eventsToSend.push_back(_events[nextEvent]);
@@ -305,7 +311,7 @@ void Server::newGame() {
 
     for (auto& player : _players) {
         if (_pixelBoard.isSetAndNot(player))
-            onEliminatePlayer(player);
+            onPlayerEliminated(player);
         else
             onPixel(player);
     }
@@ -316,11 +322,11 @@ void Server::updateGame() {
         if (!player.active)
             continue;
 
-        auto turn_dir = clients[player.clientIndex].turnDirection;
+        auto turn_dir = _clients[player.clientIndex].turnDirection;
         if (turn_dir > 0)
-            player.direction = (player.direction + args.turningSpeed) % 360;
+            player.direction = (player.direction + _arguments.turningSpeed) % 360;
         else if (turn_dir < 0) {
-            player.direction = (player.direction + args.turningSpeed) % 360;
+            player.direction = (player.direction + _arguments.turningSpeed) % 360;
             if (player.direction < 0)
                 player.direction += 360;
         }
@@ -328,13 +334,13 @@ void Server::updateGame() {
         int fx = player.x(), fy = player.y();
 
         double angle = ((1.0 * player.direction) / 360.0) * (2.0 * M_PI);
-        player.x += cos(angle);
-        player.y += sin(angle);
+        player.setX(player.x() + cos(angle));
+        player.setY(player.y() + sin(angle));
 
         int nfx = player.x(), nfy = player.y();
         if (fx != nfx || fy != nfy) {
             if (_pixelBoard.isSetAndNot(player))
-                onEliminatePlayer(player);
+                onPlayerEliminated(player);
             else
                 onPixel(player);
         }

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "ipaddress.h"
 
 enum PollResult { Success, Timeout, Error };
 
 class Sock {
-   private:
+   protected:
     int _sock;
 
    public:
@@ -18,7 +19,7 @@ class Sock {
     int write(void* buffer, size_t size);
 
     ~Sock() { close(_sock); }
-}
+};
 
 class UdpSock : public Sock {
    public:
@@ -26,4 +27,4 @@ class UdpSock : public Sock {
 
     int readFrom(void* buffer, size_t size, IPAddress& address);
     int writeTo(void* buffer, size_t size, IPAddress& address);
-}
+};

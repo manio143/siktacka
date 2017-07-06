@@ -1,6 +1,6 @@
 #include "messages.h"
 
-size_t ClientMessage::serialize(void* buffer) {
+size_t ClientMessage::serialize(char* buffer) {
     BinaryWriter bw;
 
     bw.write64(_sessionId);
@@ -12,7 +12,7 @@ size_t ClientMessage::serialize(void* buffer) {
     return bw.size();
 }
 
-void ClientMessage::deserialize(void* buffer,
+void ClientMessage::deserialize(char* buffer,
                                 std::shared_ptr<ClientMessage>* message) {
     BinaryReader br(buffer, MAX_PACKET_SIZE);
 
@@ -25,8 +25,8 @@ void ClientMessage::deserialize(void* buffer,
                                           playerName);
 }
 
-size_t ServerMessage::serialize(void* buffer) {
-    void* bufferBegin = buffer;
+size_t ServerMessage::serialize(char* buffer) {
+    char* bufferBegin = buffer;
     *((uint32_t*)buffer) = gameId();
     buffer += sizeof(uint32_t);
 
@@ -36,13 +36,13 @@ size_t ServerMessage::serialize(void* buffer) {
     return buffer - bufferBegin;
 }
 
-void ServerMessage::deserialize(void* buffer,
+void ServerMessage::deserialize(char* buffer,
                                 std::shared_ptr<ServerMessage>* message) {
-    void* bufferBegin = buffer;
+    char* bufferBegin = buffer;
     auto gameId = *((uint32_t*)buffer);
     buffer += sizeof(uint32_t);
 
-    vector<std::shared_ptr<Event>> events;
+    std::vector<std::shared_ptr<Event>> events;
 
     while (buffer - bufferBegin <= MAX_PACKET_SIZE) {
         std::shared_ptr<Event> ev_ptr;

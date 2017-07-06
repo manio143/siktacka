@@ -27,22 +27,22 @@ class ClientMessage {
     uint32_t nextExpectedEventNumber() { return _nextExpectedEventNumber; }
     std::string playerName() { return _playerName; }
 
-    size_t serialize(void* buffer);
-    static void deserialize(void* buffer, std::shared_ptr<ClientMessage> * message);
-}
+    size_t serialize(char* buffer);
+    static void deserialize(char* buffer, std::shared_ptr<ClientMessage> * message);
+};
 
 class ServerMessage {
    private:
     uint32_t _gameId;
-    vector<std::shared_ptr<Event>> _events;
+    std::vector<std::shared_ptr<Event>> _events;
 
    public:
-    ServerMessage(uint32_t gameId, vector<std::shared_ptr<Event>> events)
+    ServerMessage(uint32_t gameId, std::vector<std::shared_ptr<Event>> events)
         : _gameId(gameId), _events(events) {}
     
     uint32_t gameId() { return _gameId; }
-    vector<std::shared_ptr<Event>> events() { return _events; }
+    std::vector<std::shared_ptr<Event>> & events() { return _events; }
     
-    size_t serialize(void* buffer);
-    static void deserialize(void* buffer, std::shared_ptr<ServerMessage> * message);
-}
+    size_t serialize(char* buffer);
+    static void deserialize(char* buffer, std::shared_ptr<ServerMessage> * message);
+};

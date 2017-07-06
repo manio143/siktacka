@@ -12,6 +12,7 @@
 #include "connectors.h"
 #include "arguments.h"
 #include "const.h"
+#include "err.h"
 
 using EventsContainer = std::vector<std::shared_ptr<Event>>;
 
@@ -34,7 +35,7 @@ class Client {
     void setPlayerNames(std::string names);
     void sendRequestToServer();
     void receiveFromServer();
-    void processEvents(EventContainer& events);
+    void processEvents(EventsContainer& events);
     void sendEventsToGui();
     void receiveTurnDirection();
     bool every20ms();
@@ -43,25 +44,27 @@ class Client {
 
    public:
     Client(int argc, char** argv)
-        : _arguments(argc, argv), _sessionId(time(NULL)) {
+        : _arguments(argc, argv),
+          _sessionId(time(NULL)),
+          _serverSock(0),
+          _guiSock(0) {
         _serverSock = UdpConnector::connectTo(_arguments.host, _arguments.port);
         _guiSock =
             TcpConnector::connectTo(_arguments.guihost, _arguments.guiport);
-        _sessionId = time(NULL);
     }
 
     void run();
-}
+};
 
 char* Client::buffer() {
-    static vector<char> v(MAX_PACKET_SIZE);
+    static std::vector<char> v(MAX_PACKET_SIZE);
     memset(&v[0], 0, v.size());
     return &v[0];
 }
 
 int Client::nextExpectedEventNumber() {
     if (_events.size() > 0)
-        return _events.back().number() + 1;
+        return _events.back()->number() + 1;
     else
         return 0;
 }
@@ -77,22 +80,23 @@ void Client::sendRequestToServer() {
 void Client::setPlayerNames(std::string names) {
     std::istringstream f(names);
     std::string line;
-    while (std::getline(f, line, 0))
+    while (std::getline(f, line, (char)0))
         _players.push_back(line);
 }
 
-void Client::processEvents(EventContainer& events) {
-    for (auto& event : events) {
+void Client::processEvents(EventsContainer& events) {
+    for (auto& event : _events) {
         if (_events.size() == 0 && event->type() == NEW_GAME) {
             _events.push_back(event);
             _running = true;
-            setPlayerNames(static_cast<NewGameEvent>(event).playerNames());
-        } else if (event->number() == _events.back().number() + 1)
+            setPlayerNames(
+                static_cast<NewGameEvent*>(event.get())->playerNames());
+        } else if (event->number() == _events.back()->number() + 1)
             _events.push_back(event);
     }
 
-    if (_lastEventSentToGui == _events.back().number() &&
-        _events.back().type() == GAME_OVER) {
+    if (_lastEventSentToGui == _events.back()->number() &&
+        _events.back()->type() == GAME_OVER) {
         _events.clear();
         _running = false;
     }
@@ -106,6 +110,7 @@ bool Client::checkForIncomingPackets(Sock& sock) {
         return false;
     else
         err("poll encountered an error.\n");
+    return false;
 }
 
 void Client::receiveFromServer() {
@@ -131,18 +136,21 @@ void Client::sendEventsToGui() {
     if (!_running)
         return;
 
-    while (_lastEventSentToGui < _events.back().number()) {
+    while (_lastEventSentToGui < _events.back()->number()) {
         _lastEventSentToGui++;
         auto& event = _events[_lastEventSentToGui];
         char* buffer = this->buffer();
         auto len = event->toString(buffer);
 
         if (event->type() == PIXEL)
+            len += sprintf(buffer + len, "%s\n",
+                           _players[static_cast<PixelEvent*>(event.get())
+                                        ->playerNumber()]);
+        if (event->type() == PLAYER_ELIMINATED)
             len += sprintf(
                 buffer + len, "%s\n",
-                _players[static_cast<PixelEvent>(*event).playerNumber()]);
-        if (event->type() == PLAYER_ELIMINATED))
-            len += sprintf(buffer + len, "%s\n", _players[static_cast<PlayerEliminatedEvent>(*event).playerNumber()]);
+                _players[static_cast<PlayerEliminatedEvent*>(event.get())
+                             ->playerNumber()]);
 
         _guiSock.write(buffer, len);
     }

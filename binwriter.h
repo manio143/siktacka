@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <stdint.h>
+#include <string.h>
 
 #include <arpa/inet.h>
 #define htonll(x)    \
@@ -45,9 +46,9 @@ class BinaryWriter {
         write32(crc);
     }
 
-    void* copyTo(void* buff) { return memcpy(buff, &buffer[0], buffer.size()); }
+    char* copyTo(char* buff) { return (char *)memcpy(buff, &buffer[0], buffer.size()); }
     size_t size() { return buffer.size(); }
-}
+};
 
 class BinaryReader {
    private:
@@ -55,7 +56,7 @@ class BinaryReader {
     int pos = 0;
 
    public:
-    BinaryReader(void* buff, size_t size) {
+    BinaryReader(char* buff, size_t size) {
         buffer.resize(size);
         memcpy(&buffer[0], buff, size);
     }
@@ -78,20 +79,24 @@ class BinaryReader {
 
     std::string readString(size_t size) {
         std::string s;
-        for (int i = 0; i < size; i++)
-            s.append(buffer[pos + i]);
+        for (int i = 0; i < size; i++) {
+            char c = buffer[pos + i];
+            s.append(1, c);
+        }
         pos += size;
         return s;
     }
 
     std::string readNullString() {
         std::string s;
-        while(buffer[pos++] != 0)
-            s.append(buffer[pos-1]);
+        while (buffer[pos++] != 0) {
+            char c = buffer[pos - 1];
+            s.append(1, c);
+        }
         return s;
     }
 
-    //The last 4 bytes are the CRC
+    // The last 4 bytes are the CRC
     bool checkCRC() {
         int currPos = pos;
         pos = buffer.size() - sizeof(uint32_t);
@@ -100,4 +105,4 @@ class BinaryReader {
 
         return crc == crc32(&buffer[0], buffer.size() - sizeof(uint32_t));
     }
-}
+};

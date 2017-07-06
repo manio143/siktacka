@@ -1,10 +1,15 @@
 #include <getopt.h>
 #include <time.h>
+#include <string>
+#include <cstdarg>
+#include <string.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "arguments.h"
+#include "err.h"
 
 void ServerArguments::setDefaults() {
     width = 800;
@@ -32,13 +37,13 @@ ServerArguments::ServerArguments(int argc, char** argv) {
                 this->port = atoi(optarg);
                 break;
             case 's':
-                this->rounds_per_second = atoi(optarg);
+                this->roundsPerSecond = atoi(optarg);
                 break;
             case 't':
-                this->turning_speed = atoi(optarg);
+                this->turningSpeed = atoi(optarg);
                 break;
             case 'r':
-                this->random_seed = atol(optarg);
+                this->randomSeed = atol(optarg);
                 break;
             case '?':
                 o = (char)optopt;
@@ -78,16 +83,16 @@ ClientArguments::ClientArguments(int argc, char** argv) {
             "[ui_server_host[:port]]\n",
             argv[0]);
 
-    auto & name = argv[1];
-    if(strlen(name) > 65)
+    auto& name = argv[1];
+    if (strlen(name) > 65)
         err("Player name too long.\n");
-    while(true) {
+    for (int i = 0; true; i++) {
         if (name[i] == '\0')
             break;
         if (name[i] < 33 || name[i] > 126)
             err("Invalid character in player_name.\n");
     }
-    this->playerName = string(name);
+    this->playerName = std::string(name);
 
     char* port = NULL;
     if (!is_ipv6_address(argv[2]))

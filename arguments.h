@@ -16,7 +16,7 @@ class ServerArguments {
     uint64_t randomSeed;       // time(NULL)
 
     ServerArguments(int argc, char** argv);
-}
+};
 
 class ClientArguments {
    public:
@@ -27,4 +27,4 @@ class ClientArguments {
     uint16_t guiport;
 
     ClientArguments(int argc, char** argv);
-}
+};
