@@ -1,5 +1,5 @@
 CMD = g++
-CFLAGS  = -g -Wall -std=c++11
+CFLAGS  = -g -Wall -std=c++11 -DDEBUG
 
 OBJ = arguments.o connectors.o events.o messages.o sock.o err.o crc32.o
 

@@ -50,11 +50,11 @@ class NewGameEvent : public Event {
     NewGameEvent(uint32_t number,
                  uint32_t maxx,
                  uint32_t maxy,
-                 std::vector<std::string> names)
-        : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy) {
+                 std::vector<std::string>& names)
+        : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy), _playerNames("") {
         for (auto& name : names) {
             _playerNames.append(name);
-            _playerNames.append('\0');
+            _playerNames.append("\0");
         }
     }
 

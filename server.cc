@@ -74,6 +74,8 @@ class Server {
     }
 
     void run();
+
+    ~Server() { _sock.close(); }
 };
 
 bool Server::addOrUpdateClient(Client& client) {
@@ -115,11 +117,14 @@ void Server::handleIncomingPackets() {
     std::shared_ptr<ClientMessage> msg_ptr;
     ClientMessage::deserialize(buffer, &msg_ptr);
 
+    // debug("Received packet {%s, %d}\n", msg_ptr->playerName().c_str(),
+    // msg_ptr->turnDirection());
+
     Client client(msg_ptr->sessionId(), msg_ptr->turnDirection(),
-                  msg_ptr->playerName());
+                  msg_ptr->playerName(), ip);
 
     for (auto& lclient : _clients)
-        if (lclient.playerName == client.playerName && lclient.ip == client.ip)
+        if (lclient.playerName == client.playerName && lclient.ip != client.ip)
             return;
 
     if (addOrUpdateClient(client))
@@ -176,7 +181,7 @@ int Server::activePlayers() {
 }
 
 std::vector<std::string> Server::playerNames() {
-    std::vector<std::string> v(_players.size());
+    std::vector<std::string> v;
     for (auto& player : _players)
         v.push_back(player.name);
     return v;
@@ -191,8 +196,9 @@ uint32_t Server::nextEventNumber() {
 
 void Server::onNewGame() {
     debug("NEW GAME\n");
+    auto names = playerNames();
     auto ev_ptr = std::make_shared<NewGameEvent>(
-        nextEventNumber(), _arguments.width, _arguments.height, playerNames());
+        nextEventNumber(), _arguments.width, _arguments.height, names);
     _events.push_back(ev_ptr);
 }
 
@@ -206,7 +212,7 @@ void Server::onPixel(Player& player) {
 void Server::onPlayerEliminated(Player& player) {
     debug("PLAYER ELIMINATED - %s\n", player.name.c_str());
     _events.push_back(std::make_shared<PlayerEliminatedEvent>(nextEventNumber(),
-                                                             player.number));
+                                                              player.number));
     player.active = false;
 }
 
@@ -221,7 +227,7 @@ bool Server::clientsReadyToStart() {
 
     for (auto& client : _clients) {
         if (client.playerName != "")
-            if(client.turnDirection == 0)
+            if (client.turnDirection == 0)
                 return false;
     }
     return true;
@@ -231,7 +237,8 @@ void Server::initializePlayers() {
     for (size_t i = 0; i < _clients.size(); i++) {
         if (!_clients[i].playerName.empty()) {
             Player player((_random.next() % _arguments.width) + 0.5,
-                          (_random.next() % _arguments.height) + 0.5, _random.next() % 360,
+                          (_random.next() % _arguments.height) + 0.5,
+                          _random.next() % 360,
                           _clients[i].playerName.substr());
             player.clientIndex = i;
             _players.push_back(player);
@@ -248,7 +255,7 @@ void Server::initializePlayers() {
         player.number = i;
         player.active = true;
 
-        debug("Initialized player {%s}", player.name);
+        debug("Initialized player {%s}\n", player.name.c_str());
     }
 }
 
@@ -324,9 +331,11 @@ void Server::updateGame() {
 
         auto turn_dir = _clients[player.clientIndex].turnDirection;
         if (turn_dir > 0)
-            player.direction = (player.direction + _arguments.turningSpeed) % 360;
+            player.direction =
+                (player.direction + _arguments.turningSpeed) % 360;
         else if (turn_dir < 0) {
-            player.direction = (player.direction + _arguments.turningSpeed) % 360;
+            player.direction =
+                (player.direction + _arguments.turningSpeed) % 360;
             if (player.direction < 0)
                 player.direction += 360;
         }

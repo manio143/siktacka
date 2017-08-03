@@ -8,10 +8,11 @@
 
 class Client {
    public:
-    Client(uint64_t sessionId, int turnDirection, std::string playerName)
+    Client(uint64_t sessionId, int turnDirection, std::string playerName, IPAddress ip)
         : sessionId(sessionId),
           turnDirection(turnDirection),
           playerName(playerName),
+          ip(ip),
           time(::time(NULL)) {
     }
 

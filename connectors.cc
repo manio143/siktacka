@@ -87,7 +87,7 @@ Sock TcpConnector::connectTo(std::string host, uint16_t port) {
 
     debug("Connecting to %s:%d over TCP\n", host.c_str(), port);
 
-    printf("Trying with IPv6\n");
+    debug("Trying with IPv6\n");
     if (!get_sockaddr6(&addrip6, host.c_str(), port, false))
         sock = socket(AF_INET6, SOCK_STREAM, 0);
     if (sock < 0 || connect(sock, (sockaddr*)&addrip6, sizeof(addrip6)) != 0) {
@@ -115,9 +115,9 @@ UdpSock UdpConnector::connectTo(std::string host, uint16_t port) {
     struct sockaddr_in addrip4;
     int sock = -1;
 
-    debug("Connecting to %s:%d over UDP\n", host, port);
+    debug("Connecting to %s:%d over UDP\n", host.c_str(), port);
 
-    printf("Trying with IPv6\n");
+    debug("Trying with IPv6\n");
     if (!get_sockaddr6(&addrip6, host.c_str(), port, true))
         sock = socket(AF_INET6, SOCK_DGRAM, 0);
     if (sock < 0 || connect(sock, (sockaddr*)&addrip6, sizeof(addrip6)) != 0) {

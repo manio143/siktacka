@@ -166,13 +166,14 @@ void Client::receiveTurnDirection() {
     std::istringstream f(buffer);
     std::string line;
     while (std::getline(f, line)) {
-        if (line.compare("LEFT_KEY_DOWN"))
+        //debug("Received {%s} from GUI\n", line.c_str());
+        if (line.compare("LEFT_KEY_DOWN") == 0)
             _turnDirection = -1;
-        else if (line.compare("LEFT_KEY_UP"))
+        else if (line.compare("LEFT_KEY_UP") == 0)
             _turnDirection = 0;
-        if (line.compare("RIGHT_KEY_DOWN"))
+        if (line.compare("RIGHT_KEY_DOWN") == 0)
             _turnDirection = 1;
-        if (line.compare("RIGHT_KEY_UP"))
+        if (line.compare("RIGHT_KEY_UP") == 0)
             _turnDirection = 0;
     }
 }

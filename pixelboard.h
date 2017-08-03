@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <cassert>
 
 #include "player.h"
 
@@ -12,6 +13,7 @@ class PixelBoard {
     char& getPixel(Player& player) {
         auto x = player.x();
         auto y = player.y();
+        assert(x >= 0 && x <_width && y >= 0 && y < _height);
         return pixels[y * _width + x];
     }
 
@@ -30,4 +32,15 @@ class PixelBoard {
     }
 
     ~PixelBoard() { delete[] pixels; }
+
+    PixelBoard& operator=(PixelBoard&& other) {
+        if (this != &other) {
+            this->_width = other._width;
+            this->_height = other._height;
+            auto pix = other.pixels;
+            other.pixels = this->pixels;
+            this->pixels = pix;
+        }
+        return *this;
+    }
 };

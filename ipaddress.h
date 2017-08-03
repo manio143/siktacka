@@ -17,4 +17,8 @@ class IPAddress {
                memcmp(sockaddr.sin6_addr.s6_addr, ip2.sockaddr.sin6_addr.s6_addr,
                       sizeof(ip2.sockaddr.sin6_addr.s6_addr)) == 0;
     }
+
+    bool operator!=(const IPAddress& ip2) {
+        return !(*this == ip2);
+    }
 };

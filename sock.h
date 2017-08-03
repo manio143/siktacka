@@ -18,7 +18,7 @@ class Sock {
     int read(void* buffer, size_t size);
     int write(void* buffer, size_t size);
 
-    ~Sock() { close(_sock); }
+    void close() { ::close(_sock); }
 };
 
 class UdpSock : public Sock {

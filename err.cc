@@ -17,7 +17,7 @@ void debug(const char* fmt, ...) {
 #if DEBUG
     va_list fmt_args;
 
-    fprintf(stdout, "DBG: ");
+    fprintf(stdout, "DEBUG: ");
     va_start(fmt_args, fmt);
     vfprintf(stdout, fmt, fmt_args);
     va_end(fmt_args);
