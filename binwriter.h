@@ -16,6 +16,7 @@
          : ((uint64_t)ntohl((x)&0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 
 #include "crc32.h"
+#include "exception.h"
 
 class BinaryWriter {
    private:
@@ -59,12 +60,16 @@ class BinaryReader {
 
    public:
     BinaryReader(char* buff, size_t size) {
-        buffer.resize(size);
+        buffer.resize(size + 1);
         memcpy(&buffer[0], buff, size);
     }
 
-    uint8_t read8() { return (uint8_t)buffer[pos++]; }
+    uint8_t read8() {
+        assertSize(1);
+        return (uint8_t)buffer[pos++];
+    }
     uint32_t read32() {
+        assertSize(4);
         uint32_t x;
         x = *((uint32_t*)&(buffer[pos]));
         x = ntohl(x);
@@ -72,6 +77,7 @@ class BinaryReader {
         return x;
     }
     uint64_t read64() {
+        assertSize(8);
         uint64_t x;
         x = *((uint64_t*)&(buffer[pos]));
         x = ntohll(x);
@@ -80,6 +86,7 @@ class BinaryReader {
     }
 
     std::string readString(size_t size) {
+        assertSize(size);
         std::string s;
         for (int i = 0; i < size; i++) {
             char c = buffer[pos + i];
@@ -102,9 +109,16 @@ class BinaryReader {
     bool checkCRC() {
         int currPos = pos;
         pos = buffer.size() - sizeof(uint32_t);
+        if (pos < 0)
+            throw InvalidSizeException();
         auto crc = read32();
         pos = currPos;
 
         return crc == crc32(&buffer[0], buffer.size() - sizeof(uint32_t));
+    }
+
+    void assertSize(int size) {
+        if (buffer.size() - pos < size)
+            throw InvalidSizeException();
     }
 };

@@ -27,6 +27,9 @@ class Player {
     uint32_t x() { return floor(_x); }
     uint32_t y() { return floor(_y); }
 
+    float raw_x() { return _x; }
+    float raw_y() { return _y; }
+
     bool operator<(const Player& p2) {
         return name < p2.name;
     }

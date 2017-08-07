@@ -8,13 +8,13 @@
 class ClientMessage {
    private:
     uint64_t _sessionId;
-    uint8_t _turnDirection;
+    int8_t _turnDirection;
     uint32_t _nextExpectedEventNumber;
     std::string _playerName;
 
    public:
     ClientMessage(uint64_t sessionId,
-                  uint8_t turnDirection,
+                  int8_t turnDirection,
                   uint32_t nextExpectedEventNumber,
                   std::string playerName)
         : _sessionId(sessionId),
@@ -23,7 +23,7 @@ class ClientMessage {
           _playerName(playerName) {}
 
     uint64_t sessionId() { return _sessionId; }
-    uint8_t turnDirection() { return _turnDirection; }
+    int8_t turnDirection() { return _turnDirection; }
     uint32_t nextExpectedEventNumber() { return _nextExpectedEventNumber; }
     std::string playerName() { return _playerName; }
 

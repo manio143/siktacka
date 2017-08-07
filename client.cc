@@ -22,6 +22,7 @@ class Client {
     int _lastEventSentToGui = -1;
     uint64_t _sessionId;
     bool _running = false;
+    bool _reset = false;
     uint32_t _currentGameId;
 
     EventsContainer _events;
@@ -39,6 +40,7 @@ class Client {
     void sendEventsToGui();
     void receiveTurnDirection();
     bool every20ms();
+    void checkForGameOver();
 
     char* buffer();
 
@@ -91,15 +93,19 @@ void Client::processEvents(EventsContainer& events) {
             _running = true;
             setPlayerNames(
                 static_cast<NewGameEvent*>(event.get())->playerNames());
-        } else if(_events.size() == 0) {break;}    
-    else if (event->number() == _events.back()->number() + 1)
+        } else if (_events.size() == 0) {
+            break;
+        } else if (event->number() == _events.back()->number() + 1)
             _events.push_back(event);
     }
+}
 
+void Client::checkForGameOver() {
     if (_events.size() > 0 && _lastEventSentToGui == _events.back()->number() &&
         _events.back()->type() == GAME_OVER) {
         _events.clear();
         _running = false;
+        _reset = true;
         _lastEventSentToGui = -1;
     }
 }
@@ -128,7 +134,10 @@ void Client::receiveFromServer() {
 
     if (msg_ptr->gameId() != _currentGameId && _running)
         return;
+    if (msg_ptr->gameId() == _currentGameId && _reset)
+        return;
 
+    _reset = false;
     _currentGameId = msg_ptr->gameId();
 
     processEvents(msg_ptr->events());
@@ -145,14 +154,16 @@ void Client::sendEventsToGui() {
         auto len = event->toString(buffer);
 
         if (event->type() == PIXEL)
-            len += sprintf(buffer + len, "%s\n",
-                           _players[static_cast<PixelEvent*>(event.get())
-                                        ->playerNumber()].c_str());
+            len += sprintf(
+                buffer + len, "%s\n",
+                _players[static_cast<PixelEvent*>(event.get())->playerNumber()]
+                    .c_str());
         if (event->type() == PLAYER_ELIMINATED)
             len += sprintf(
                 buffer + len, "%s\n",
                 _players[static_cast<PlayerEliminatedEvent*>(event.get())
-                             ->playerNumber()].c_str());
+                             ->playerNumber()]
+                    .c_str());
 
         _guiSock.write(buffer, len);
     }
@@ -199,6 +210,7 @@ void Client::run() {
         if (every20ms())
             sendRequestToServer();
         receiveFromServer();
+        checkForGameOver();
         sendEventsToGui();
         receiveTurnDirection();
     }

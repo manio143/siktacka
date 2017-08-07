@@ -89,8 +89,7 @@ bool Server::addOrUpdateClient(Client& client) {
             update = true;
         } else if (lclient.ip == client.ip) {
             if (client.sessionId > lclient.sessionId) {
-                if (lclient.playerIndex > 0)
-                    _players[lclient.playerIndex].active = false;
+                _players[lclient.playerIndex].clientIndex = -1;
                 _clients[i] = client;
                 update = true;
             } else {
@@ -115,7 +114,12 @@ void Server::handleIncomingPackets() {
     _sock.readFrom(buffer, MAX_PACKET_SIZE, ip);
 
     std::shared_ptr<ClientMessage> msg_ptr;
-    ClientMessage::deserialize(buffer, &msg_ptr);
+    try {
+        ClientMessage::deserialize(buffer, &msg_ptr);
+    } catch (InvalidSizeException isex) {
+        debug("Invalid message received.\n");
+        return;
+    }
 
     // debug("Received packet {%s, %d}\n", msg_ptr->playerName().c_str(),
     // msg_ptr->turnDirection());
@@ -160,10 +164,9 @@ bool Server::checkForIncomingPackets() {
 void Server::cleanClients() {
     auto time = ::time(NULL);
     for (size_t i = 0; i < _clients.size(); i++)
-        if (time - _clients[i].time > 2 * 60) {
+        if (time - _clients[i].time > 2) {
             if (_clients[i].playerIndex > 0) {
                 _players[_clients[i].playerIndex].clientIndex = -1;
-                _players[_clients[i].playerIndex].active = false;
             }
             _clients[i] = _clients.back();
             _clients.pop_back();
@@ -236,10 +239,10 @@ bool Server::clientsReadyToStart() {
 void Server::initializePlayers() {
     for (size_t i = 0; i < _clients.size(); i++) {
         if (!_clients[i].playerName.empty()) {
-            Player player((_random.next() % _arguments.width) + 0.5,
-                          (_random.next() % _arguments.height) + 0.5,
-                          _random.next() % 360,
-                          _clients[i].playerName.substr());
+            float x = (_random.next() % _arguments.width) + 0.5;
+            float y = (_random.next() % _arguments.height) + 0.5;
+            int dir = _random.next() % 360;
+            Player player(x, y, dir, _clients[i].playerName.substr());
             player.clientIndex = i;
             _players.push_back(player);
         }
@@ -317,22 +320,22 @@ void Server::updateGame() {
         if (!player.active)
             continue;
 
-        auto turn_dir = _clients[player.clientIndex].turnDirection;
+        auto turn_dir = player.clientIndex >= 0
+                            ? _clients[player.clientIndex].turnDirection
+                            : 0;
         if (turn_dir > 0)
             player.direction =
                 (player.direction + _arguments.turningSpeed) % 360;
         else if (turn_dir < 0) {
             player.direction =
-                (player.direction + _arguments.turningSpeed) % 360;
-            if (player.direction < 0)
-                player.direction += 360;
+                (player.direction + 360 - _arguments.turningSpeed) % 360;
         }
 
         int fx = player.x(), fy = player.y();
 
         double angle = ((1.0 * player.direction) / 360.0) * (2.0 * M_PI);
-        player.setX(player.x() + cos(angle));
-        player.setY(player.y() + sin(angle));
+        player.setX(player.raw_x() + cos(angle));
+        player.setY(player.raw_y() + sin(angle));
 
         int nfx = player.x(), nfy = player.y();
         if (fx != nfx || fy != nfy) {
@@ -365,7 +368,7 @@ void Server::run() {
         if (_state == running && nextRound())
             updateGame();
 
-        if (_state == running && activePlayers() == 1)
+        if (_state == running && activePlayers() <= 1)
             gameOver();
 
         sendEventsToAll();
