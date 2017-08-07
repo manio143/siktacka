@@ -22,7 +22,7 @@ class Client {
     int _lastEventSentToGui = -1;
     uint64_t _sessionId;
     bool _running = false;
-    int _currentGameId;
+    uint32_t _currentGameId;
 
     EventsContainer _events;
     ClientArguments _arguments;
@@ -85,20 +85,22 @@ void Client::setPlayerNames(std::string names) {
 }
 
 void Client::processEvents(EventsContainer& events) {
-    for (auto& event : _events) {
+    for (auto& event : events) {
         if (_events.size() == 0 && event->type() == NEW_GAME) {
             _events.push_back(event);
             _running = true;
             setPlayerNames(
                 static_cast<NewGameEvent*>(event.get())->playerNames());
-        } else if (event->number() == _events.back()->number() + 1)
+        } else if(_events.size() == 0) {break;}    
+    else if (event->number() == _events.back()->number() + 1)
             _events.push_back(event);
     }
 
-    if (_lastEventSentToGui == _events.back()->number() &&
+    if (_events.size() > 0 && _lastEventSentToGui == _events.back()->number() &&
         _events.back()->type() == GAME_OVER) {
         _events.clear();
         _running = false;
+        _lastEventSentToGui = -1;
     }
 }
 
@@ -136,7 +138,7 @@ void Client::sendEventsToGui() {
     if (!_running)
         return;
 
-    while (_lastEventSentToGui < _events.back()->number()) {
+    while (_lastEventSentToGui < (int64_t)_events.back()->number()) {
         _lastEventSentToGui++;
         auto& event = _events[_lastEventSentToGui];
         char* buffer = this->buffer();
@@ -145,12 +147,12 @@ void Client::sendEventsToGui() {
         if (event->type() == PIXEL)
             len += sprintf(buffer + len, "%s\n",
                            _players[static_cast<PixelEvent*>(event.get())
-                                        ->playerNumber()]);
+                                        ->playerNumber()].c_str());
         if (event->type() == PLAYER_ELIMINATED)
             len += sprintf(
                 buffer + len, "%s\n",
                 _players[static_cast<PlayerEliminatedEvent*>(event.get())
-                             ->playerNumber()]);
+                             ->playerNumber()].c_str());
 
         _guiSock.write(buffer, len);
     }
@@ -166,7 +168,7 @@ void Client::receiveTurnDirection() {
     std::istringstream f(buffer);
     std::string line;
     while (std::getline(f, line)) {
-        //debug("Received {%s} from GUI\n", line.c_str());
+        // debug("Received {%s} from GUI\n", line.c_str());
         if (line.compare("LEFT_KEY_DOWN") == 0)
             _turnDirection = -1;
         else if (line.compare("LEFT_KEY_UP") == 0)

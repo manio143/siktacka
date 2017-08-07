@@ -54,7 +54,7 @@ class NewGameEvent : public Event {
         : Event(number, NEW_GAME), _maxx(maxx), _maxy(maxy), _playerNames("") {
         for (auto& name : names) {
             _playerNames.append(name);
-            _playerNames.append("\0");
+            _playerNames.push_back(0);
         }
     }
 

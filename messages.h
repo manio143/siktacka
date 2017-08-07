@@ -37,7 +37,7 @@ class ServerMessage {
     std::vector<std::shared_ptr<Event>> _events;
 
    public:
-    ServerMessage(uint32_t gameId, std::vector<std::shared_ptr<Event>> events)
+    ServerMessage(uint32_t gameId, std::vector<std::shared_ptr<Event>>& events)
         : _gameId(gameId), _events(events) {}
     
     uint32_t gameId() { return _gameId; }

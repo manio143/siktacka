@@ -55,8 +55,9 @@ char* EventDeserializer::deserialize(char* buff,
         case NEW_GAME: {
             auto maxx = br.read32();
             auto maxy = br.read32();
+            size_t stringLen = len - 2 * sizeof(uint32_t) /*maxx i maxxy*/ - sizeof(uint32_t) /* event_no */ - sizeof(uint8_t) /* event_type */;
             *event = std::make_shared<NewGameEvent>(
-                number, maxx, maxy, br.readString(len - 2 * sizeof(uint32_t)));
+                number, maxx, maxy, br.readString(stringLen));
         } break;
         case PIXEL: {
             auto playerNumber = br.read8();
@@ -82,7 +83,7 @@ size_t NewGameEvent::toString(char* buffer) {
                    this->_playerNames.c_str());
 }
 size_t PixelEvent::toString(char* buffer) {
-    return sprintf(buffer, "PIXEL %d %d", this->x(), this->y());
+    return sprintf(buffer, "PIXEL %d %d ", this->x(), this->y());
 }
 size_t PlayerEliminatedEvent::toString(char* buffer) {
     return sprintf(buffer, "PLAYER_ELIMINATED ");

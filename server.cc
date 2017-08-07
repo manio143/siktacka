@@ -274,18 +274,6 @@ void Server::sendEvents(Client& client, int nextEvent) {
 
         size_t size = 0;
 
-        // PREVIOUS IMPLEMENTATION
-        // char* buff = buffer;
-        // while (nextEvent < _events.size()) {
-        //     char* nbuff = _events[nextEvent]->serialize(
-        //         buff, sizeof(buffer) - (buff - buffer));
-        //     if (buff == nbuff)
-        //         break;
-        //     size += (nbuff - buff);
-        //     buff = nbuff;
-        //     nextEvent++;
-        // }
-
         size_t spaceLeft = MAX_PACKET_SIZE - sizeof(uint32_t);
         EventsContainer eventsToSend;
         while (nextEvent < _events.size()) {

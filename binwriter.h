@@ -46,7 +46,9 @@ class BinaryWriter {
         write32(crc);
     }
 
-    char* copyTo(char* buff) { return (char *)memcpy(buff, &buffer[0], buffer.size()); }
+    char* copyTo(char* buff) {
+        return (char*)memcpy(buff, &buffer[0], buffer.size()) + buffer.size();
+    }
     size_t size() { return buffer.size(); }
 };
 
