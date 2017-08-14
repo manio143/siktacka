@@ -32,9 +32,9 @@ class PixelBoard {
 
     void set(Player& player) { getPixel(player) = player.number + 1; }
 
-    bool isSetAndNot(Player& player) {
+    bool isSet(Player& player) {
         auto pixel = getPixel(player);
-        return pixel != 0 && pixel != player.number + 1;
+        return pixel != 0;
     }
 
     ~PixelBoard() { delete[] pixels; }

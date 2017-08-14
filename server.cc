@@ -312,7 +312,7 @@ void Server::newGame() {
     onNewGame();
 
     for (auto& player : _players) {
-        if (_pixelBoard.isSetAndNot(player))
+        if (_pixelBoard.isSet(player))
             onPlayerEliminated(player);
         else
             onPixel(player);
@@ -343,7 +343,7 @@ void Server::updateGame() {
 
         int nfx = player.x(), nfy = player.y();
         if (fx != nfx || fy != nfy) {
-            if (_pixelBoard.isSetAndNot(player))
+            if (_pixelBoard.isSet(player))
                 onPlayerEliminated(player);
             else
                 onPixel(player);
