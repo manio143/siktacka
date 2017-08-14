@@ -60,7 +60,10 @@ class BinaryReader {
 
    public:
     BinaryReader(char* buff, size_t size) {
-        buffer.resize(size + 1);
+        buffer.reserve(size + 1);  // make sure there's a \0 after the last
+                                   // element in the buffer so that
+                                   // readNullString works when it gets to end
+        buffer.resize(size);
         memcpy(&buffer[0], buff, size);
     }
 

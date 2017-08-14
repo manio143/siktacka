@@ -106,8 +106,11 @@ void Client::processEvents(EventsContainer& events) {
         if (_events.size() == 0 && event->type() == NEW_GAME) {
             _events.push_back(event);
             _running = true;
-            setPlayerNames(
-                static_cast<NewGameEvent*>(event.get())->playerNames());
+            
+            auto ev = static_cast<NewGameEvent*>(event.get());
+            setPlayerNames(ev->playerNames());
+            _maxx = ev->maxx();
+            _maxy = ev->maxy();
         } else if (_events.size() == 0) {
             break;
         } else if (event->number() == _events.back()->number() + 1) {

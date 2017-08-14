@@ -7,7 +7,7 @@ PollResult Sock::poll() {
     pollfd.fd = this->_sock;
     pollfd.events = POLLIN;
 
-    int r = ::poll(&pollfd, 1, 1);
+    int r = ::poll(&pollfd, 1, 5);
 
     if (r < 0)
         return Error;
