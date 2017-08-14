@@ -16,6 +16,7 @@
 #include "client.h"
 #include "pixelboard.h"
 #include "err.h"
+#include "exception.h"
 
 using ClientsContainer = std::vector<Client>;
 using PlayersContainer = std::vector<Player>;
@@ -117,7 +118,10 @@ void Server::handleIncomingPackets() {
     try {
         ClientMessage::deserialize(buffer, &msg_ptr);
     } catch (InvalidSizeException isex) {
-        debug("Invalid message received.\n");
+        debug("Invalid message received (too small).\n");
+        return;
+    } catch (InvalidValueException ivex) {
+        debug("Invalid message received (value of %s)", ivex.what());
         return;
     }
 

@@ -24,6 +24,7 @@ class Client {
     bool _running = false;
     bool _reset = false;
     uint32_t _currentGameId;
+    int _maxx = 0, _maxy = 0;
 
     EventsContainer _events;
     ClientArguments _arguments;
@@ -36,6 +37,7 @@ class Client {
     void setPlayerNames(std::string names);
     void sendRequestToServer();
     void receiveFromServer();
+    void validateEvent(std::shared_ptr<Event>& event);
     void processEvents(EventsContainer& events);
     void sendEventsToGui();
     void receiveTurnDirection();
@@ -86,6 +88,19 @@ void Client::setPlayerNames(std::string names) {
         _players.push_back(line);
 }
 
+void Client::validateEvent(std::shared_ptr<Event>& event) {
+    if (event->type() == PIXEL) {
+        auto ev = static_cast<PixelEvent*>(event.get());
+        if (ev->x() > _maxx || ev->y() > _maxy ||
+            ev->playerNumber() > _players.size())
+            err("Invalid data in PIXEL event.\n");
+    } else if (event->type() == PLAYER_ELIMINATED) {
+        auto ev = static_cast<PlayerEliminatedEvent*>(event.get());
+        if (ev->playerNumber() > _players.size())
+            err("Invalid data in PLAYER_ELIMINATED event.\n");
+    }
+}
+
 void Client::processEvents(EventsContainer& events) {
     for (auto& event : events) {
         if (_events.size() == 0 && event->type() == NEW_GAME) {
@@ -95,8 +110,10 @@ void Client::processEvents(EventsContainer& events) {
                 static_cast<NewGameEvent*>(event.get())->playerNames());
         } else if (_events.size() == 0) {
             break;
-        } else if (event->number() == _events.back()->number() + 1)
+        } else if (event->number() == _events.back()->number() + 1) {
+            validateEvent(event);
             _events.push_back(event);
+        }
     }
 }
 
@@ -130,7 +147,11 @@ void Client::receiveFromServer() {
     _serverSock.read(buffer, MAX_PACKET_SIZE);
 
     std::shared_ptr<ServerMessage> msg_ptr;
-    ServerMessage::deserialize(buffer, &msg_ptr);
+    try {
+        ServerMessage::deserialize(buffer, &msg_ptr);
+    } catch (std::exception ex) {
+        err("An error occured while deserializing the message from server.\n");
+    }
 
     if (msg_ptr->gameId() != _currentGameId && _running)
         return;

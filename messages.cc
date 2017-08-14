@@ -1,4 +1,5 @@
 #include "messages.h"
+#include "exception.h"
 
 size_t ClientMessage::serialize(char* buffer) {
     BinaryWriter bw;
@@ -12,14 +13,28 @@ size_t ClientMessage::serialize(char* buffer) {
     return bw.size();
 }
 
+bool invalidNameString(std::string s) {
+    if(s.length() > 64)
+        return true;
+    for(auto c : s)
+        if(c < 33 || c > 126)
+            return true;
+    return false;
+}
+
 void ClientMessage::deserialize(char* buffer,
                                 std::shared_ptr<ClientMessage>* message) {
     BinaryReader br(buffer, MAX_PACKET_SIZE);
 
     auto sessionId = br.read64();
-    auto turnDirection = br.read8();
+    int8_t turnDirection = br.read8();
     auto nextEEN = br.read32();
     auto playerName = br.readNullString();
+
+    if(turnDirection > 1 || turnDirection < -1)
+        throw InvalidValueException("turnDirection");
+    if(invalidNameString(playerName))
+        throw InvalidValueException("playerName");
 
     *message = std::make_shared<ClientMessage>(sessionId, turnDirection, nextEEN,
                                           playerName);
