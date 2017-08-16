@@ -37,6 +37,10 @@ class PixelBoard {
         return pixel != 0;
     }
 
+		void clear() {
+			memset(pixels, 0, _width * _height);
+		}
+
     ~PixelBoard() { delete[] pixels; }
 
     PixelBoard& operator=(PixelBoard&& other) {
