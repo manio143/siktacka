@@ -303,7 +303,8 @@ void Server::newGame() {
 
     _events.clear();
     _players.clear();
-		_pixelBoard.clear();
+    _pixelBoard.clear();
+    _lastEventSent = -1;
 
     _state = running;
     _gameId = _random.next();
